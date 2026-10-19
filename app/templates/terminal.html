@@ -1,0 +1,579 @@
+{% extends "base.html" %}
+
+{% block title %}Docker Terminal Showcase - Airutil{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="/static/vendor/xterm/xterm.css">
+<style>
+.terminal-page-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding-bottom: 3rem;
+}
+
+.terminal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.terminal-title-area h1 {
+    font-size: 1.75rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.terminal-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.cmd-chip {
+    background: var(--bg-surface-elevated);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--duration-fast) var(--ease-standard);
+    user-select: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.cmd-chip:hover {
+    border-color: var(--brand-blue);
+    background: rgba(37, 99, 235, 0.1);
+    color: var(--brand-blue);
+    transform: translateY(-1px);
+}
+
+.cmd-chip.tour-active {
+    border-color: var(--brand-amber);
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--brand-amber);
+}
+
+.terminal-window {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-xl);
+    overflow: hidden;
+    position: relative;
+}
+
+.terminal-titlebar {
+    background: #161b22;
+    padding: 0.75rem 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #30363d;
+}
+
+.window-dots {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+}
+.dot-red { background: #ff5f56; }
+.dot-yellow { background: #ffbd2e; }
+.dot-green { background: #27c93f; }
+
+.terminal-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.terminal-body {
+    padding: 1rem;
+    min-height: 480px;
+    height: 60vh;
+    max-height: 720px;
+}
+
+.terminal-input-bar {
+    background: #161b22;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid #30363d;
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.terminal-input-bar .prompt {
+    color: #58a6ff;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.terminal-input-bar input {
+    background: transparent;
+    border: none;
+    color: #f0f6fc;
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    width: 100%;
+    outline: none;
+}
+
+.terminal-sidebar-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+}
+
+@media (min-width: 1024px) {
+    .terminal-main-layout {
+        display: grid;
+        grid-template-columns: 1fr 340px;
+        gap: 1.5rem;
+        align-items: start;
+    }
+}
+
+.audit-box {
+    max-height: 280px;
+    overflow-y: auto;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    background: var(--bg-surface-elevated);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem;
+    border: 1px solid var(--border-color);
+}
+
+.audit-item {
+    padding: 0.35rem 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="terminal-page-container">
+    <div class="terminal-header">
+        <div class="terminal-title-area">
+            <h1>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="4 17 10 11 4 5"></polyline>
+                    <line x1="12" y1="19" x2="20" y2="19"></line>
+                </svg>
+                Docker Terminal Showcase
+            </h1>
+            <p class="text-muted" style="margin: 0.25rem 0 0 0;">
+                Live OS & Container inspection console. Safe, whitelisted read-only Docker Engine API via socket proxy.
+            </p>
+        </div>
+        <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+            <span class="badge badge-success" id="proxy-status-badge">
+                <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#22c55e; margin-right:4px;"></span>
+                Socket Proxy: Active
+            </span>
+            <button id="btn-tour" class="btn btn-primary btn-sm" style="display: inline-flex; align-items: center; gap: 0.4rem;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                Run Demo Tour
+            </button>
+        </div>
+    </div>
+
+    <!-- Quick Command Chips -->
+    <div>
+        <div style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); margin-bottom: 0.5rem;">
+            Click-to-Run Quick Commands
+        </div>
+        <div class="terminal-chips">
+            <button class="cmd-chip" data-cmd="docker ps">docker ps</button>
+            <button class="cmd-chip" data-cmd="docker stats --no-stream">docker stats</button>
+            <button class="cmd-chip" data-cmd="docker inspect airutil_app1">inspect app1</button>
+            <button class="cmd-chip" data-cmd="docker network inspect vault_net">vault_net</button>
+            <button class="cmd-chip" data-cmd="docker volume inspect airutil_airutil_data">volume data</button>
+            <button class="cmd-chip" data-cmd="os balance" style="border-color: var(--brand-blue); font-weight: 600;">os balance (Nginx Round-Robin)</button>
+            <button class="cmd-chip" data-cmd="os ttl" style="border-color: var(--brand-teal); font-weight: 600;">os ttl (Redis Vault Expiry)</button>
+            <button class="cmd-chip" data-cmd="os beam" style="border-color: var(--brand-purple); font-weight: 600;">os beam (Burn-on-Read)</button>
+            <button class="cmd-chip" data-cmd="os cgroup">os cgroup</button>
+            <button class="cmd-chip" data-cmd="os ns">os ns</button>
+            <button class="cmd-chip" data-cmd="os overlay">os overlay</button>
+            <button class="cmd-chip" data-cmd="os failover">os failover</button>
+            <button class="cmd-chip" data-cmd="os stress">os stress (cgroup test)</button>
+            <button class="cmd-chip" data-cmd="help">help</button>
+        </div>
+    </div>
+
+    <div class="terminal-main-layout">
+        <!-- Main Terminal Window -->
+        <div class="terminal-window">
+            <div class="terminal-titlebar">
+                <div class="window-dots">
+                    <span class="dot dot-red"></span>
+                    <span class="dot dot-yellow"></span>
+                    <span class="dot dot-green"></span>
+                    <span style="font-family: var(--font-mono); font-size: 0.75rem; color: #8b949e; margin-left: 0.5rem;">
+                        student@airutil-vault:~$ (read-only safe shell)
+                    </span>
+                </div>
+                <div class="terminal-toolbar">
+                    <button id="btn-copy-term" class="btn btn-outline btn-xs" title="Copy output">Copy</button>
+                    <button id="btn-clear-term" class="btn btn-outline btn-xs" title="Clear screen">Clear</button>
+                </div>
+            </div>
+
+            <div id="terminal-container" class="terminal-body"></div>
+
+            <form id="terminal-form" class="terminal-input-bar">
+                <span class="prompt">airutil&gt;</span>
+                <input type="text" id="terminal-input" placeholder="Type a whitelisted command or pick a chip above (type 'help')..." autocomplete="off" spellcheck="false">
+                <button type="submit" class="btn btn-primary btn-xs" style="padding: 0.4rem 0.75rem;">Run</button>
+            </form>
+        </div>
+
+        <!-- Right Side Panel: Security & Tour Guide -->
+        <div class="terminal-sidebar-grid">
+            <div class="card">
+                <h3 style="font-size: 1rem; font-weight: 700; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.4rem;">
+                    🛡️ Showcase Security Model
+                </h3>
+                <ul style="font-size: 0.82rem; color: var(--text-secondary); padding-left: 1.25rem; line-height: 1.6; margin: 0;">
+                    <li><strong>Protected Network:</strong> Connected only to isolated <code>showcase_net</code>; socket proxy has zero exposed ports.</li>
+                    <li><strong>Read-Only Daemon:</strong> Proxy exposes read-only endpoints (containers, stats, info, networks, volumes). POST/DELETE are 403 Forbidden.</li>
+                    <li><strong>Command Whitelist:</strong> Strict <code>shlex</code> token parser blocks subshells (<code>$()</code>, <code>`</code>), pipes, redirects, and semicolons.</li>
+                    <li><strong>Rate Limited:</strong> 30 commands/minute per IP, burst of 5 concurrent commands max.</li>
+                </ul>
+            </div>
+
+            <div class="card" id="tour-card" style="display: none; border-color: var(--brand-amber);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                    <h3 style="font-size: 0.95rem; font-weight: 700; color: var(--brand-amber); margin: 0;">
+                        🎓 Guided Demo Tour
+                    </h3>
+                    <button id="btn-stop-tour" class="btn btn-outline btn-xs" style="font-size: 0.7rem;">Stop</button>
+                </div>
+                <p id="tour-step-desc" style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.75rem; line-height: 1.5;"></p>
+                <div style="font-size: 0.75rem; font-family: var(--font-mono); color: var(--brand-amber);" id="tour-progress"></div>
+            </div>
+
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                    <h3 style="font-size: 0.95rem; font-weight: 700; margin: 0;">
+                        📜 Audit Stream
+                    </h3>
+                    <span style="font-size: 0.7rem; color: var(--text-tertiary);" id="audit-count">0 logged</span>
+                </div>
+                <div class="audit-box" id="audit-stream">
+                    <div style="color: var(--text-tertiary); text-align: center; padding: 1rem 0;">No commands executed yet</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/vendor/xterm/xterm.js"></script>
+<script src="/static/vendor/xterm/addon-fit.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const termContainer = document.getElementById('terminal-container');
+    const termInput = document.getElementById('terminal-input');
+    const termForm = document.getElementById('terminal-form');
+    const auditStream = document.getElementById('audit-stream');
+    const auditCount = document.getElementById('audit-count');
+    const btnTour = document.getElementById('btn-tour');
+    const tourCard = document.getElementById('tour-card');
+    const tourStepDesc = document.getElementById('tour-step-desc');
+    const tourProgress = document.getElementById('tour-progress');
+    const btnStopTour = document.getElementById('btn-stop-tour');
+
+    let history = [];
+    let historyIdx = -1;
+    let auditCounter = 0;
+    let isRunning = false;
+    let tourActive = false;
+    let tourAbort = false;
+
+    // Initialize xterm.js
+    const term = new Terminal({
+        fontFamily: "'JetBrains Mono', Consolas, Monaco, monospace",
+        fontSize: 13,
+        lineHeight: 1.25,
+        theme: {
+            background: '#0d1117',
+            foreground: '#f0f6fc',
+            cursor: '#58a6ff',
+            selectionBackground: 'rgba(88, 166, 255, 0.3)',
+            black: '#484f58',
+            red: '#ff7b72',
+            green: '#3fb950',
+            yellow: '#d29922',
+            blue: '#58a6ff',
+            magenta: '#bc8cff',
+            cyan: '#39c5cf',
+            white: '#b1bac4',
+            brightBlack: '#6e7681',
+            brightRed: '#ffa198',
+            brightGreen: '#56d364',
+            brightYellow: '#e3b341',
+            brightBlue: '#79c0ff',
+            brightMagenta: '#d2a8ff',
+            brightCyan: '#56d4dd',
+            brightWhite: '#f0f6fc'
+        },
+        convertEol: true,
+        cursorBlink: true,
+        scrollback: 2000
+    });
+
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(termContainer);
+    fitAddon.fit();
+
+    window.addEventListener('resize', () => fitAddon.fit());
+
+    // Print welcome banner
+    term.writeln('\x1b[1;34m╔══════════════════════════════════════════════════════════════╗\x1b[0m');
+    term.writeln('\x1b[1;34m║\x1b[0m   \x1b[1;37mAirutil Live Docker & OS Kernel Showcase Terminal\x1b[0m         \x1b[1;34m║\x1b[0m');
+    term.writeln('\x1b[1;34m║\x1b[0m   Multi-container orchestration, cgroups v2, & namespaces     \x1b[1;34m║\x1b[0m');
+    term.writeln('\x1b[1;34m╚══════════════════════════════════════════════════════════════╝\x1b[0m');
+    term.writeln('Type \x1b[1;33mhelp\x1b[0m to list whitelisted commands, or click any chip above.\r\n');
+
+    function logAudit(cmd, durationMs, success) {
+        if (auditCounter === 0) auditStream.innerHTML = '';
+        auditCounter++;
+        auditCount.textContent = `${auditCounter} logged`;
+        const item = document.createElement('div');
+        item.className = 'audit-item';
+        item.innerHTML = `
+            <span style="color: ${success ? 'var(--brand-teal)' : 'var(--brand-rose)'}">
+                ${success ? '✓' : '✗'} ${escapeHtml(cmd)}
+            </span>
+            <span style="color: var(--text-tertiary);">${durationMs}ms</span>
+        `;
+        auditStream.prepend(item);
+    }
+
+    function escapeHtml(str) {
+        return str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    }
+
+    async function executeCommand(cmd) {
+        if (!cmd || !cmd.trim() || isRunning) return;
+        cmd = cmd.trim();
+
+        if (cmd === 'clear') {
+            term.clear();
+            return;
+        }
+
+        history.push(cmd);
+        historyIdx = history.length;
+        isRunning = true;
+        termInput.disabled = true;
+
+        term.writeln(`\r\n\x1b[1;32m$ ${cmd}\x1b[0m`);
+        const startTime = Date.now();
+
+        try {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+            const res = await fetch('/api/terminal/run', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({ command: cmd })
+            });
+
+            if (!res.ok) {
+                const errJson = await res.json().catch(() => ({ error: 'Request failed' }));
+                term.writeln(`\x1b[1;31mError: ${errJson.error || res.statusText}\x1b[0m`);
+                logAudit(cmd, Date.now() - startTime, false);
+                return;
+            }
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buf = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buf += decoder.decode(value, { stream: true });
+                const lines = buf.split('\n');
+                buf = lines.pop(); // keep partial line
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const rawData = line.slice(6).trim();
+                        if (rawData === '[DONE]') {
+                            const dur = Date.now() - startTime;
+                            term.writeln(`\r\n\x1b[38;5;244m[Process completed in ${dur}ms]\x1b[0m`);
+                            logAudit(cmd, dur, true);
+                            continue;
+                        }
+                        try {
+                            const payload = JSON.parse(rawData);
+                            const text = payload.output || payload.data;
+                            if (text) {
+                                term.write(text.replace(/\n/g, '\r\n'));
+                            }
+                        } catch (e) {
+                            term.write(rawData.replace(/\n/g, '\r\n'));
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            term.writeln(`\x1b[1;31mNetwork error: ${err.message}\x1b[0m`);
+            logAudit(cmd, Date.now() - startTime, false);
+        } finally {
+            isRunning = false;
+            termInput.disabled = false;
+            termInput.value = '';
+            termInput.focus();
+        }
+    }
+
+    termForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const cmd = termInput.value;
+        executeCommand(cmd);
+    });
+
+    // Quick command chips
+    document.querySelectorAll('.cmd-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            const cmd = chip.getAttribute('data-cmd');
+            termInput.value = cmd;
+            executeCommand(cmd);
+        });
+    });
+
+    // Clear and Copy buttons
+    document.getElementById('btn-clear-term').addEventListener('click', () => {
+        term.clear();
+    });
+
+    document.getElementById('btn-copy-term').addEventListener('click', () => {
+        term.selectAll();
+        const text = term.getSelection();
+        term.clearSelection();
+        if (text) {
+            navigator.clipboard.writeText(text).then(() => {
+                if (window.Airutil && window.Airutil.showToast) {
+                    window.Airutil.showToast('Terminal output copied to clipboard', 'success');
+                }
+            });
+        }
+    });
+
+    // History navigation with Up/Down arrows
+    termInput.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (history.length > 0 && historyIdx > 0) {
+                historyIdx--;
+                termInput.value = history[historyIdx];
+            }
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (historyIdx < history.length - 1) {
+                historyIdx++;
+                termInput.value = history[historyIdx];
+            } else {
+                historyIdx = history.length;
+                termInput.value = '';
+            }
+        }
+    });
+
+    // Demo Tour Steps
+    const tourSteps = [
+        {
+            cmd: "docker ps",
+            desc: "Step 1/5: Enumerate active topology. Notice 7 containers: app1, app2, worker, redis, db, nginx, and dockerproxy."
+        },
+        {
+            cmd: "os balance",
+            desc: "Step 2/5: Test Nginx Layer-7 Round-Robin balancing. Observe requests distributed between app1 and app2 via X-Served-By."
+        },
+        {
+            cmd: "os ttl",
+            desc: "Step 3/5: Observe Redis ephemeral vault key TTL countdown from 30s before automatic purge."
+        },
+        {
+            cmd: "os beam",
+            desc: "Step 4/5: Verify Clip Beam atomic burn-on-read mechanism (instant PostgreSQL deletion on first fetch)."
+        },
+        {
+            cmd: "os cgroup",
+            desc: "Step 5/5: Inspect Linux cgroup v2 limits (0.5 CPU, 128MB RAM max memory ceiling on Flask replicas)."
+        }
+    ];
+
+    async function runTour() {
+        if (tourActive || isRunning) return;
+        tourActive = true;
+        tourAbort = false;
+        tourCard.style.display = 'block';
+        btnTour.classList.add('tour-active');
+        term.writeln('\r\n\x1b[1;35m>>> Starting Guided Demo Tour (5 Steps) <<<\x1b[0m\r\n');
+
+        for (let i = 0; i < tourSteps.length; i++) {
+            if (tourAbort) break;
+            const step = tourSteps[i];
+            tourProgress.textContent = `Running step ${i + 1} of ${tourSteps.length}`;
+            tourStepDesc.textContent = step.desc;
+
+            term.writeln(`\r\n\x1b[1;36m▶ ${step.desc}\x1b[0m`);
+            await executeCommand(step.cmd);
+
+            // Wait 2.5s between steps
+            if (i < tourSteps.length - 1 && !tourAbort) {
+                await new Promise(r => setTimeout(r, 2500));
+            }
+        }
+
+        term.writeln('\r\n\x1b[1;32m✓ Guided Demo Tour complete! Feel free to explore more commands.\x1b[0m\r\n');
+        tourCard.style.display = 'none';
+        btnTour.classList.remove('tour-active');
+        tourActive = false;
+    }
+
+    btnTour.addEventListener('click', runTour);
+    btnStopTour.addEventListener('click', () => {
+        tourAbort = true;
+        tourCard.style.display = 'none';
+        btnTour.classList.remove('tour-active');
+        tourActive = false;
+        term.writeln('\r\n\x1b[1;33m[Tour cancelled by user]\x1b[0m\r\n');
+    });
+});
+</script>
+{% endblock %}
