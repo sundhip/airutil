@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Receive Clip Beam - Airutil{% endblock %}
+
+{% block content %}
+<div class="container beam-receive-page" style="max-width: 650px; margin: 3rem auto;">
+
+    <!-- STATE 1: PIN Required -->
+    {% if state == 'pin_required' %}
+    <div class="card text-center" style="padding: 2.5rem 1.5rem;">
+        <span style="font-size: 3rem; margin-bottom: 0.5rem; display: block;" aria-hidden="true">🔒</span>
+        <h1 style="font-size: 1.35rem; font-weight: 700; margin-bottom: 0.5rem;">Protected Clip Beam</h1>
+        <p class="text-muted" style="font-size: 0.85rem; margin-bottom: 1.5rem;">
+            The sender protected this message with a 4-digit claim PIN.
+        </p>
+
+        {% if error %}
+        <div class="alert alert-danger" style="font-size: 0.85rem; margin-bottom: 1.25rem;">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        <form action="/beam/{{ token }}" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group" style="margin-bottom: 1.5rem;">
+                <input type="password" name="pin" class="form-control pin-code-input" placeholder="••••" pattern="\d{4}" maxlength="4" autofocus required>
+                <small class="text-muted" style="display: block; margin-top: 0.5rem;">
+                    {{ attempts_left }} attempt(s) remaining before automatic burn.
+                </small>
+            </div>
+
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1.5rem;">
+                ⏱️ Beam expires in <strong style="color: var(--warning);">{{ ttl }}s</strong>
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="padding: 0.65rem 2rem; font-weight: 700;">
+                Unlock & Reveal
+            </button>
+        </form>
+    </div>
+
+    <!-- STATE 2: Revealed & Burned -->
+    {% elif state == 'revealed' %}
+    <div class="card" style="padding: 2rem;">
+        <div class="burn-banner">
+            <span style="font-size: 1.3rem;" aria-hidden="true">🔥</span>
+            <div>
+                <strong>Burned on Read:</strong> This message was atomically deleted from Redis memory via <code>GETDEL</code>. It no longer exists anywhere on the server.
+            </div>
+        </div>
+
+        <h1 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.75rem;">Received Clip:</h1>
+
+        <!-- Content Box -->
+        <div class="beam-content-box" id="beam-content-text">{{ content }}</div>
+
+        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+            <button type="button" class="btn btn-primary btn-sm" id="btn-copy-clip">
+                📋 Copy to Clipboard
+            </button>
+            {% if is_link %}
+            <a href="{{ content }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm">
+                🌐 Open Link ↗
+            </a>
+            {% endif %}
+            <a href="/beam" class="btn btn-outline btn-sm" style="margin-left: auto;">
+                Create Your Own Beam →
+            </a>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const copyBtn = document.getElementById("btn-copy-clip");
+        const contentText = document.getElementById("beam-content-text");
+        if (copyBtn && contentText) {
+            copyBtn.addEventListener("click", () => {
+                navigator.clipboard.writeText(contentText.textContent).then(() => {
+                    const orig = copyBtn.textContent;
+                    copyBtn.textContent = "✓ Copied to Clipboard!";
+                    setTimeout(() => { copyBtn.textContent = orig; }, 2000);
+                });
+            });
+        }
+    });
+    </script>
+
+    <!-- STATE 3: Already Burned or Expired -->
+    {% else %}
+    <div class="card text-center" style="padding: 3rem 1.5rem;">
+        <span style="font-size: 3.5rem; margin-bottom: 0.75rem; display: block;" aria-hidden="true">
+            {% if state == 'burned' %}💨{% else %}⌛{% endif %}
+        </span>
+        <h1 style="font-size: 1.35rem; font-weight: 700; margin-bottom: 0.5rem;">
+            {% if state == 'burned' %}Clip Beam Already Burned{% else %}Clip Beam Expired{% endif %}
+        </h1>
+        <p class="text-muted" style="margin-bottom: 1.5rem; font-size: 0.9rem;">
+            {{ message }}
+        </p>
+        <a href="/beam" class="btn btn-primary btn-sm">Create New Beam</a>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}

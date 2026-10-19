@@ -34,6 +34,7 @@ from flask import (
 from app.auth import auth_bp
 from app.files import files_bp
 from app.vault import vault_bp
+from app.beam import beam_bp
 from app.db import get_db_cursor, init_db
 from app.session import (
     SESSION_COOKIE_NAME,
@@ -52,6 +53,7 @@ app.secret_key = os.getenv("SECRET_KEY", "airutil_super_secret_session_key_produ
 app.register_blueprint(auth_bp)
 app.register_blueprint(files_bp)
 app.register_blueprint(vault_bp)
+app.register_blueprint(beam_bp)
 
 # OS Concept: Environment Variables
 REPLICA_NAME: str = os.getenv("REPLICA_NAME", "standalone-app")
@@ -390,11 +392,7 @@ def share_download_public(share_token: str):
 
 
 
-@app.route("/beam", methods=["GET"])
-@login_required
-def beam():
-    """Clip Beam placeholder for Phase 5."""
-    return render_template("placeholder.html", module_name="Burn-on-Read Clip Beam", phase_num=5)
+
 
 
 if __name__ == "__main__":

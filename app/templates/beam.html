@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block title %}Clip Beam - Airutil{% endblock %}
+
+{% block content %}
+<div class="container beam-page" style="max-width: 800px; margin: 0 auto;">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Burn-on-Read Clip Beam</h1>
+            <p class="text-muted">Pure in-memory, atomic single-use clipboard transfer. Burns upon reading.</p>
+        </div>
+    </div>
+
+    <!-- Active Beam Tracking Card (If active_token provided) -->
+    <div id="active-beam-card" class="card" style="margin-bottom: 2rem; border-color: var(--brand-blue); {% if not active_token %}display: none;{% endif %}">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+                <span style="font-size: 1.4rem;" aria-hidden="true">📡</span>
+                <h2 style="font-size: 1.1rem; font-weight: 700; margin: 0;">Active Beam Live Tracking</h2>
+            </div>
+            <div id="beam-live-status-pill" class="beam-status-pill beam-status-waiting">
+                <span class="pulse-dot pulse-green" id="beam-pulse-dot"></span>
+                <span id="beam-status-text">Waiting for recipient...</span>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.5rem; align-items: center;">
+            <div>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+                    Share this one-time link with your classmate or scan the QR code. The message will be destroyed the instant it is revealed.
+                </p>
+                <div style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem;">
+                    <input type="text" id="beam-link-input" class="form-control" readonly value="" style="font-size: 0.85rem; font-family: var(--font-mono);">
+                    <button type="button" class="btn btn-outline btn-sm" id="btn-copy-beam-link">📋 Copy</button>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);" id="beam-timer-text">
+                    ⏱️ Auto-expires in: <strong id="beam-countdown-seconds" style="font-family: var(--font-mono); color: var(--warning);">--</strong>
+                </div>
+            </div>
+
+            <!-- In-Memory QR Code Display -->
+            <div style="text-align: center;">
+                <div style="display: inline-block; background: #ffffff; padding: 8px; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+                    <img id="beam-qr-img" src="" alt="Beam QR Code" style="width: 140px; height: 140px; display: block;">
+                </div>
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;">Scan to beam directly to phone</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Beam Creation Form Card -->
+    <div class="card" style="padding: 1.75rem;">
+        <h2 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 1rem;">Create New Clip Beam</h2>
+        <form action="/beam/create" method="POST" id="beam-create-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <div class="form-group" style="margin-bottom: 1.25rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+                    <label for="beam-content" class="form-label" style="margin: 0;">Message, Code Snippet, or Link</label>
+                    <span id="char-counter" style="font-size: 0.75rem; color: var(--text-muted);">0 / 5120 bytes</span>
+                </div>
+                <textarea name="content" id="beam-content" rows="6" class="form-control" placeholder="Paste Wi-Fi credentials, Zoom links, assignment snippets, or token secrets..." required maxlength="5120" style="font-family: var(--font-mono); font-size: 0.9rem;"></textarea>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                <div class="form-group">
+                    <label for="beam-ttl" class="form-label">Expiry Time (TTL)</label>
+                    <select name="ttl" id="beam-ttl" class="form-control">
+                        <option value="60s">60 Seconds (Ultra Fast Transfer)</option>
+                        <option value="5m" selected>5 Minutes (Standard Beam)</option>
+                        <option value="15m">15 Minutes (Study Group)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="beam-pin" class="form-label">Optional 4-Digit Claim PIN</label>
+                    <input type="text" name="claim_code" id="beam-pin" class="form-control" placeholder="e.g. 4821" pattern="\d{4}" maxlength="4" style="letter-spacing: 0.2em; font-family: var(--font-mono);">
+                    <small class="text-muted" style="font-size: 0.75rem;">3 wrong attempts will burn the beam automatically.</small>
+                </div>
+            </div>
+
+            <div class="alert alert-info" style="font-size: 0.8rem; margin-bottom: 1.5rem;">
+                🛡️ <strong>OS Kernel Memory Isolation:</strong> This clip is cached solely in Redis volatile RAM buffers with atomic <code>GETDEL</code> eviction. Zero bytes are written to PostgreSQL or physical disk volumes.
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="width: 100%; font-size: 1rem; font-weight: 700; padding: 0.75rem;">
+                ⚡ Launch Clip Beam
+            </button>
+        </form>
+    </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    // Character / Byte Counter
+    const textarea = document.getElementById("beam-content");
+    const counter = document.getElementById("char-counter");
+    if (textarea && counter) {
+        textarea.addEventListener("input", () => {
+            const bytes = new TextEncoder().encode(textarea.value).length;
+            counter.textContent = `${bytes} / 5120 bytes`;
+            if (bytes > 5120) {
+                counter.style.color = "var(--danger)";
+            } else {
+                counter.style.color = "var(--text-muted)";
+            }
+        });
+    }
+
+    // Active Beam Live Polling
+    const activeToken = "{{ active_token }}";
+    if (activeToken) {
+        const fullUrl = window.location.origin + "/beam/" + activeToken;
+        const linkInput = document.getElementById("beam-link-input");
+        const qrImg = document.getElementById("beam-qr-img");
+        if (linkInput) linkInput.value = fullUrl;
+
+        // Dynamic in-browser fallback QR or fetch from metadata
+        if (qrImg) {
+            qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(fullUrl)}`;
+        }
+
+        const copyBtn = document.getElementById("btn-copy-beam-link");
+        if (copyBtn) {
+            copyBtn.addEventListener("click", () => {
+                navigator.clipboard.writeText(fullUrl).then(() => {
+                    copyBtn.textContent = "✓ Copied!";
+                    setTimeout(() => { copyBtn.textContent = "📋 Copy"; }, 2000);
+                });
+            });
+        }
+
+        // Live status polling every 1.5s
+        let pollInterval = setInterval(() => {
+            fetch(`/beam/${activeToken}/status`)
+                .then(r => r.json())
+                .then(data => {
+                    const statusText = document.getElementById("beam-status-text");
+                    const pill = document.getElementById("beam-live-status-pill");
+                    const dot = document.getElementById("beam-pulse-dot");
+                    const countdown = document.getElementById("beam-countdown-seconds");
+
+                    if (data.status === "waiting") {
+                        if (countdown) countdown.textContent = `${data.ttl}s`;
+                    } else if (data.status === "read") {
+                        clearInterval(pollInterval);
+                        pill.className = "beam-status-pill beam-status-read";
+                        dot.className = "pulse-dot pulse-orange";
+                        statusText.textContent = "🔥 Read & Burned!";
+                        if (countdown) countdown.textContent = "Burned from RAM";
+                    } else if (data.status === "expired") {
+                        clearInterval(pollInterval);
+                        pill.className = "beam-status-pill beam-status-expired";
+                        dot.className = "pulse-dot pulse-red";
+                        statusText.textContent = "⌛ Expired (Unread)";
+                        if (countdown) countdown.textContent = "Expired";
+                    }
+                })
+                .catch(() => {});
+        }, 1500);
+    }
+});
+</script>
+{% endblock %}

@@ -1622,4 +1622,102 @@ code {
     animation: fadeIn 0.2s ease-in-out;
 }
 
+/* ==============================================================================
+   Phase 5: Burn-on-Read Clip Beam Styles
+   ============================================================================== */
+
+.beam-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.8rem;
+    border-radius: var(--radius-full);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.beam-status-waiting {
+    background-color: var(--info-subtle);
+    color: var(--info);
+    border: 1px solid var(--info);
+}
+
+.beam-status-read {
+    background-color: var(--warning-subtle);
+    color: var(--warning);
+    border: 1px solid var(--warning);
+}
+
+.beam-status-expired {
+    background-color: var(--danger-subtle);
+    color: var(--danger);
+    border: 1px solid var(--danger);
+}
+
+.pulse-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.pulse-green {
+    background-color: var(--success);
+    box-shadow: 0 0 6px var(--success);
+    animation: pulse 1.5s infinite;
+}
+
+.pulse-orange {
+    background-color: var(--warning);
+    box-shadow: 0 0 6px var(--warning);
+}
+
+.pulse-red {
+    background-color: var(--danger);
+}
+
+@keyframes pulse {
+    0% { transform: scale(0.95); opacity: 0.8; }
+    50% { transform: scale(1.3); opacity: 1; }
+    100% { transform: scale(0.95); opacity: 0.8; }
+}
+
+.pin-code-input {
+    font-family: var(--font-mono);
+    font-size: 1.5rem;
+    letter-spacing: 0.5rem;
+    text-align: center;
+    max-width: 200px;
+    margin: 0 auto;
+}
+
+.burn-banner {
+    background: linear-gradient(135deg, rgba(220, 38, 38, 0.1), rgba(245, 158, 11, 0.1));
+    border: 1px solid var(--danger);
+    border-radius: var(--radius-md);
+    padding: 0.85rem 1.25rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--danger);
+}
+
+.beam-content-box {
+    background-color: var(--bg-surface-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 400px;
+    overflow-y: auto;
+    margin-bottom: 1.25rem;
+}
+
+
 
