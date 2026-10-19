@@ -1,68 +1,174 @@
 """Airutil Web Application Entrypoint.
 
 Operating Systems Concepts Demonstrated:
-1. Namespaces (PID, UTS, MNT): Isolation of hostnames, processes, and mount points.
-2. Control Groups (cgroups v2): Hard CPU quotas and memory limits enforced by the Linux kernel.
-3. IPC & Network Sockets: TCP communication with PostgreSQL and Redis across bridge network.
-4. Storage Volumes & VFS: Shared volume mounting for cross-container persistent storage.
+1. Distributed Shared State: Server-side sessions in Redis allow load-balanced
+   Flask replicas (app1, app2) to authenticate users seamlessly across requests.
+2. Kernel Namespaces & cgroups: UTS, PID, and memory quotas inspected live.
+3. IPC & Network Sockets: Threaded connection pooling to PostgreSQL and Redis.
+4. Security & Access Control: CSRF verification and least-privilege non-root execution.
 """
 
 from __future__ import annotations
 
 import datetime
+import logging
 import os
+import secrets
 import socket
-from typing import Any, Dict
+from functools import wraps
+from typing import Any, Callable, Dict, Optional
 
-from flask import Flask, jsonify, render_template, request
+from flask import (
+    Flask,
+    abort,
+    flash,
+    g,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
+    Response,
+)
+
+from app.auth import auth_bp
+from app.db import get_db_cursor, init_db
+from app.session import (
+    SESSION_COOKIE_NAME,
+    SessionManager,
+    get_redis_client,
+)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("airutil.main")
 
 # Initialize Flask application instance
 app = Flask(__name__)
+app.secret_key = os.getenv("SECRET_KEY", "airutil_super_secret_session_key_production_grade_32bytes")
 
-# OS Concept: Environment Variables (POSIX process environment block)
+# Register Blueprints
+app.register_blueprint(auth_bp)
+
+# OS Concept: Environment Variables
 REPLICA_NAME: str = os.getenv("REPLICA_NAME", "standalone-app")
 STORAGE_PATH: str = os.getenv("STORAGE_PATH", "/vault_storage")
 DATABASE_URL: str = os.getenv("DATABASE_URL", "")
 REDIS_URL: str = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
+# Auto-initialize database tables on container startup
+try:
+    init_db()
+except Exception as err:
+    logger.warning("Database init on startup deferred: %s", err)
+
+
+# ==============================================================================
+# Request Lifecycle & Security Middleware
+# ==============================================================================
+
+@app.before_request
+def load_session_and_csrf() -> None:
+    """Load session from Redis and establish CSRF token before processing request.
+
+    OS Concept: Distributed Session State.
+    Both replicas app1 and app2 query the shared airutil_redis instance.
+    """
+    g.replica_name = REPLICA_NAME
+    g.user = None
+    g.session_id = request.cookies.get(SESSION_COOKIE_NAME)
+
+    sm = SessionManager()
+    if g.session_id:
+        session_data = sm.get_session(g.session_id, refresh=True)
+        if session_data:
+            g.user = session_data
+            g.csrf_token = session_data.get("csrf_token")
+        else:
+            g.session_id = None
+
+    if not hasattr(g, "csrf_token") or not g.csrf_token:
+        # Generate anonymous CSRF token for unauthenticated visitors
+        anon_cookie = request.cookies.get("airutil_anon_csrf")
+        if anon_cookie:
+            g.csrf_token = anon_cookie
+        else:
+            g.csrf_token = secrets.token_hex(32)
+
+    # CSRF Verification on state-changing requests
+    if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+        # Exclude specific non-browser APIs if needed
+        token = request.form.get("csrf_token") or request.headers.get("X-CSRFToken")
+        if not token or token != g.csrf_token:
+            logger.warning("CSRF validation failed for %s from %s", request.path, request.remote_addr)
+            abort(403, description="CSRF token validation failed. Please refresh and try again.")
+
+
+@app.after_request
+def set_security_headers_and_anon_csrf(response: Response) -> Response:
+    """Set standard security headers and anonymous CSRF cookie if applicable."""
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["X-Served-By-Replica"] = REPLICA_NAME
+
+    if not g.user and hasattr(g, "csrf_token"):
+        response.set_cookie(
+            "airutil_anon_csrf",
+            g.csrf_token,
+            max_age=7200,
+            httponly=True,
+            samesite="Lax"
+        )
+    return response
+
+
+@app.context_processor
+def inject_template_globals() -> Dict[str, Any]:
+    """Inject CSRF token, replica name, and user context into all templates."""
+    return {
+        "csrf_token": lambda: getattr(g, "csrf_token", ""),
+        "current_user": getattr(g, "user", None),
+        "replica_name": REPLICA_NAME,
+    }
+
+
+def login_required(f: Callable) -> Callable:
+    """Decorator to enforce authenticated session."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not getattr(g, "user", None):
+            flash("Please log in to access this page.", "warning")
+            return redirect(url_for("auth.login", next=request.url))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+# ==============================================================================
+# OS Primitives Diagnostics Helpers
+# ==============================================================================
 
 def get_cgroup_memory_limit() -> str:
-    """Read cgroup v2 memory limit from /sys/fs/cgroup/memory.max.
-
-    OS Concept:
-    Linux Control Groups (cgroups v2) expose resource constraints
-    via the pseudo-filesystem mounted at /sys/fs/cgroup.
-    """
+    """Read cgroup v2 memory limit from /sys/fs/cgroup/memory.max."""
     try:
-        # Check cgroup v2 path first
         cgroup_v2_path = "/sys/fs/cgroup/memory.max"
         if os.path.exists(cgroup_v2_path):
             with open(cgroup_v2_path, "r", encoding="utf-8") as f:
                 val = f.read().strip()
                 if val == "max":
                     return "Unlimited (max)"
-                bytes_val = int(val)
-                return f"{bytes_val / (1024 * 1024):.1f} MiB"
+                return f"{int(val) / (1024 * 1024):.1f} MiB"
 
-        # Check cgroup v1 fallback
         cgroup_v1_path = "/sys/fs/cgroup/memory/memory.limit_in_bytes"
         if os.path.exists(cgroup_v1_path):
             with open(cgroup_v1_path, "r", encoding="utf-8") as f:
-                bytes_val = int(f.read().strip())
-                return f"{bytes_val / (1024 * 1024):.1f} MiB"
+                return f"{int(f.read().strip()) / (1024 * 1024):.1f} MiB"
     except Exception:
         pass
     return "128.0 MiB (configured)"
 
 
 def get_system_diagnostics() -> Dict[str, Any]:
-    """Collect OS primitives and container isolation metadata.
-
-    OS Concepts:
-    - UTS Namespace: Container hostname isolation.
-    - PID Namespace: Process ID isolation (Gunicorn worker runs as low-numbered PID).
-    - VFS / Mount Namespace: Shared volume mount verification.
-    """
+    """Collect OS primitives and container isolation metadata."""
     storage_mounted = os.path.isdir(STORAGE_PATH)
     storage_writable = False
     if storage_mounted:
@@ -89,13 +195,13 @@ def get_system_diagnostics() -> Dict[str, Any]:
     }
 
 
+# ==============================================================================
+# Application Routes
+# ==============================================================================
+
 @app.route("/healthz", methods=["GET"])
 def healthcheck():
-    """Health check endpoint for Docker HEALTHCHECK and Nginx load balancer probes.
-
-    Returns:
-        JSON response with service health status, replica name, and timestamp.
-    """
+    """Health check endpoint for Docker HEALTHCHECK and Nginx load balancer probes."""
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     return jsonify({
         "status": "healthy",
@@ -108,9 +214,79 @@ def healthcheck():
 
 @app.route("/", methods=["GET"])
 def index():
-    """Main dashboard showing active replica, OS primitives, and system state."""
+    """Landing page or direct redirect to dashboard for logged-in students."""
+    if g.user:
+        return redirect(url_for("dashboard"))
     diagnostics = get_system_diagnostics()
     return render_template("index.html", diag=diagnostics)
+
+
+@app.route("/dashboard", methods=["GET"])
+@login_required
+def dashboard():
+    """Protected student dashboard showing active session details and system state."""
+    r = get_redis_client()
+    session_ttl = 0
+    if g.session_id:
+        try:
+            session_ttl = r.ttl(f"session:{g.session_id}")
+        except Exception:
+            session_ttl = 7200
+
+    # Fetch recent activity logs for current user
+    activity_entries = []
+    try:
+        with get_db_cursor(commit=False) as cur:
+            cur.execute(
+                """
+                SELECT action, details, ip_address, created_at
+                FROM activity_log
+                WHERE user_id = %s
+                ORDER BY created_at DESC
+                LIMIT 5
+                """,
+                (g.user["user_id"],)
+            )
+            activity_entries = cur.fetchall()
+    except Exception as e:
+        logger.error("Failed to load activity logs: %s", e)
+
+    return render_template(
+        "dashboard.html",
+        user=g.user,
+        session_id=g.session_id,
+        session_ttl=session_ttl,
+        activity=activity_entries,
+        replica_name=REPLICA_NAME
+    )
+
+
+@app.route("/oslab", methods=["GET"])
+def oslab():
+    """OS Lab primitives live inspection view."""
+    diagnostics = get_system_diagnostics()
+    return render_template("oslab.html", diag=diagnostics)
+
+
+@app.route("/files", methods=["GET"])
+@login_required
+def files():
+    """Smart AirDrop & Semester Organizer placeholder for Phase 3."""
+    return render_template("placeholder.html", module_name="Smart AirDrop & Semester Organizer", phase_num=3)
+
+
+@app.route("/vault", methods=["GET"])
+@login_required
+def vault():
+    """Password Vault placeholder for Phase 4."""
+    return render_template("placeholder.html", module_name="AES Password Vault", phase_num=4)
+
+
+@app.route("/beam", methods=["GET"])
+@login_required
+def beam():
+    """Clip Beam placeholder for Phase 5."""
+    return render_template("placeholder.html", module_name="Burn-on-Read Clip Beam", phase_num=5)
 
 
 if __name__ == "__main__":

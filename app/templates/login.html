@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Log In - Airutil{% endblock %}
+
+{% block content %}
+<div class="auth-wrapper">
+    <div class="auth-card">
+        <div class="auth-header">
+            <span class="auth-badge">Secure Authentication</span>
+            <h1>Log In to Airutil</h1>
+            <p class="auth-subtitle">Access your files, passwords, and active beams.</p>
+        </div>
+
+        <form method="POST" action="/login" class="auth-form" novalidate>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <div class="form-group">
+                <label for="login_id">Username or Email</label>
+                <input 
+                    type="text" 
+                    id="login_id" 
+                    name="login_id" 
+                    class="form-control" 
+                    placeholder="Username or email" 
+                    value="{{ login_id|default('') }}" 
+                    required 
+                    autocomplete="username"
+                    autofocus
+                >
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input 
+                    type="password" 
+                    id="password" 
+                    name="password" 
+                    class="form-control" 
+                    placeholder="Enter your master password" 
+                    required 
+                    autocomplete="current-password"
+                >
+            </div>
+
+            <div class="security-note">
+                <span class="shield-icon" aria-hidden="true">🛡️</span>
+                <span class="note-text">
+                    Protected by <strong>Redis Rate Limiting</strong> (max 5 failed attempts/min) and <strong>Argon2id</strong>.
+                </span>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block">
+                <span>Unlock Vault</span> &rarr;
+            </button>
+        </form>
+
+        <div class="auth-footer">
+            <p>Don't have an account yet? <a href="/register" class="link-brand">Sign Up</a></p>
+        </div>
+    </div>
+</div>
+{% endblock %}

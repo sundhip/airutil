@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}{{ module_name }} - Airutil{% endblock %}
+
+{% block content %}
+<div class="auth-wrapper">
+    <div class="auth-card text-center">
+        <div class="auth-header">
+            <span class="auth-badge">Phase {{ phase_num }} Roadmap</span>
+            <h1>{{ module_name }}</h1>
+            <p class="auth-subtitle">
+                This campus utility module will be activated in Phase {{ phase_num }}.
+            </p>
+        </div>
+        <div class="p-4">
+            <p class="card-desc mb-4">
+                Airutil's modular design decouples storage, cryptography, and task scheduling into logical phases.
+            </p>
+            <a href="/dashboard" class="btn btn-primary">&larr; Return to Dashboard</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

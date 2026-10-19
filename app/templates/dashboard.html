@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Airutil{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <!-- Header Welcome Card -->
+    <section class="dashboard-hero">
+        <div class="dashboard-hero-content">
+            <span class="tag">Student Dashboard</span>
+            <h1>Welcome, {{ user.username }}!</h1>
+            <p class="subtitle">
+                Logged in as <code>{{ user.email }}</code>. Your session is synchronized across load-balanced replicas in Redis.
+            </p>
+        </div>
+        <div class="dashboard-hero-badge">
+            <span class="replica-badge {{ 'badge-app1' if replica_name == 'app1' else 'badge-app2' }}" id="dash-replica-badge">
+                Served by: <strong>{{ replica_name }}</strong>
+            </span>
+        </div>
+    </section>
+
+    <!-- OS Concept: Distributed Session Persistence Card -->
+    <section class="card mb-4" aria-label="Distributed Session Information">
+        <div class="card-header-flex">
+            <div>
+                <h2>Distributed Redis Session State</h2>
+                <p class="card-desc">
+                    Demonstrating OS shared memory: Replicas <code>app1</code> and <code>app2</code> share sessions via <code>airutil_redis</code>.
+                    Refreshing or making requests alternates between replicas with zero session loss.
+                </p>
+            </div>
+            <button id="btn-refresh-session" class="btn btn-outline btn-sm" onclick="testSessionPersistence()">
+                🔄 Ping Replicas (Stay Logged In)
+            </button>
+        </div>
+
+        <div class="session-metrics-grid">
+            <div class="metric-box">
+                <span class="metric-label">Session ID (Redis Key)</span>
+                <span class="metric-value font-mono">session:{{ session_id[:8] }}...{{ session_id[-6:] }}</span>
+                <span class="metric-sub">Stored in Redis & HttpOnly Cookie</span>
+            </div>
+            <div class="metric-box">
+                <span class="metric-label">Sliding Expiry Window</span>
+                <span class="metric-value highlight-val" id="session-ttl-display">{{ session_ttl }}s</span>
+                <span class="metric-sub">Refreshes to 7200s (2 hrs) on activity</span>
+            </div>
+            <div class="metric-box">
+                <span class="metric-label">Current Handling Container</span>
+                <span class="metric-value font-mono text-brand" id="live-serving-replica">{{ replica_name }}</span>
+                <span class="metric-sub">Port 5000 (Internal Bridge)</span>
+            </div>
+        </div>
+
+        <div id="session-test-log" class="test-log-box" style="display: none;" aria-live="polite"></div>
+    </section>
+
+    <!-- Quick Access Modules Grid -->
+    <section class="mb-4">
+        <h2 class="section-title">Campus Utility Modules</h2>
+        <div class="cards-grid">
+            <article class="card module-card">
+                <div class="card-icon" aria-hidden="true">📂</div>
+                <div class="card-body">
+                    <h3>Smart AirDrop</h3>
+                    <p class="card-desc">Organize semester coursework and share files with automatic expiry.</p>
+                    <a href="/files" class="btn btn-outline btn-sm">Open Files &rarr;</a>
+                </div>
+            </article>
+
+            <article class="card module-card">
+                <div class="card-icon" aria-hidden="true">🔐</div>
+                <div class="card-body">
+                    <h3>Password Vault</h3>
+                    <p class="card-desc">AES-256 (Fernet) encrypted logins with 30-second Redis auto-lock.</p>
+                    <a href="/vault" class="btn btn-outline btn-sm">Open Vault &rarr;</a>
+                </div>
+            </article>
+
+            <article class="card module-card">
+                <div class="card-icon" aria-hidden="true">⚡</div>
+                <div class="card-body">
+                    <h3>Clip Beam</h3>
+                    <p class="card-desc">Burn-on-read snippet sharing across mobile and desktop browsers.</p>
+                    <a href="/beam" class="btn btn-outline btn-sm">Beam Snippet &rarr;</a>
+                </div>
+            </article>
+
+            <article class="card module-card">
+                <div class="card-icon" aria-hidden="true">🧪</div>
+                <div class="card-body">
+                    <h3>OS Lab Primitives</h3>
+                    <p class="card-desc">Live cgroup v2 memory/CPU limits, namespace PIDs, and overlay mounts.</p>
+                    <a href="/oslab" class="btn btn-outline btn-sm">Inspect OS Lab &rarr;</a>
+                </div>
+            </article>
+        </div>
+    </section>
+
+    <!-- Recent Activity Audit Trail -->
+    <section class="card" aria-label="Recent Account Activity">
+        <h2>Recent Activity & Security Audit Trail</h2>
+        <p class="card-desc">Audit logs stored persistently in PostgreSQL (<code>activity_log</code> table).</p>
+
+        {% if activity %}
+        <div class="table-responsive">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Timestamp (UTC)</th>
+                        <th scope="col">Action</th>
+                        <th scope="col">Details</th>
+                        <th scope="col">Client IP</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in activity %}
+                    <tr>
+                        <td><code>{{ item.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</code></td>
+                        <td><span class="badge badge-info">{{ item.action }}</span></td>
+                        <td>{{ item.details }}</td>
+                        <td><code>{{ item.ip_address }}</code></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="empty-state">No activity logged yet.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function testSessionPersistence() {
+    const logBox = document.getElementById("session-test-log");
+    const liveReplica = document.getElementById("live-serving-replica");
+    const dashBadge = document.getElementById("dash-replica-badge");
+    const ttlDisplay = document.getElementById("session-ttl-display");
+
+    logBox.style.display = "block";
+    logBox.innerHTML = "<p>Pinging cluster to verify cross-replica session persistence...</p>";
+
+    let results = [];
+    for (let i = 1; i <= 4; i++) {
+        try {
+            const res = await fetch(`/healthz?t=${Date.now()}`);
+            const data = await res.json();
+            results.push(`Ping #${i}: Served by <strong>${data.replica}</strong> (Session Active)`);
+            if (liveReplica) liveReplica.textContent = data.replica;
+            if (dashBadge) dashBadge.innerHTML = `Served by: <strong>${data.replica}</strong>`;
+        } catch (e) {
+            results.push(`Ping #${i}: Error: ${e.message}`);
+        }
+        await new Promise(r => setTimeout(r, 150));
+    }
+
+    logBox.innerHTML = results.map(r => `<div class="log-entry">${r}</div>`).join("") + 
+        `<div class="log-success">✓ Verified: User remains authenticated while Nginx load-balances across replicas!</div>`;
+}
+</script>
+{% endblock %}

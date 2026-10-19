@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block title %}OS Lab Primitives - Airutil{% endblock %}
+
+{% block content %}
+<div class="oslab-container">
+    <div class="hero-card">
+        <span class="tag">Operating Systems Live Laboratory</span>
+        <h1>Linux Kernel & Container Isolation Primitives</h1>
+        <p class="subtitle">
+            Live inspection of the process, filesystem, and control group limits enforced by the Linux kernel on container replica <code>{{ diag.replica_name }}</code>.
+        </p>
+    </div>
+
+    <div class="cards-grid">
+        <!-- Card 1: UTS & PID Namespaces -->
+        <article class="card">
+            <div class="card-icon" aria-hidden="true">🏷️</div>
+            <div class="card-body">
+                <h3>Namespace Isolation</h3>
+                <p class="card-desc">Processes and network sockets isolated per container namespace.</p>
+                <dl class="meta-list">
+                    <div class="meta-row">
+                        <dt>UTS Hostname:</dt>
+                        <dd><code>{{ diag.hostname }}</code></dd>
+                    </div>
+                    <div class="meta-row">
+                        <dt>PID inside NS:</dt>
+                        <dd><code>{{ diag.pid }}</code> (Parent: <code>{{ diag.ppid }}</code>)</dd>
+                    </div>
+                    <div class="meta-row">
+                        <dt>UID / GID:</dt>
+                        <dd><code>{{ diag.uid }}</code> : <code>{{ diag.gid }}</code> (non-root: airutil)</dd>
+                    </div>
+                </dl>
+            </div>
+        </article>
+
+        <!-- Card 2: Control Groups (cgroups v2) -->
+        <article class="card">
+            <div class="card-icon" aria-hidden="true">⚖️</div>
+            <div class="card-body">
+                <h3>cgroups v2 Quotas</h3>
+                <p class="card-desc">Kernel enforced hard limit on physical memory and CPU scheduling.</p>
+                <dl class="meta-list">
+                    <div class="meta-row">
+                        <dt>Memory Limit:</dt>
+                        <dd><strong class="highlight-val">{{ diag.cgroup_memory_limit }}</strong></dd>
+                    </div>
+                    <div class="meta-row">
+                        <dt>CPU Limit:</dt>
+                        <dd><strong class="highlight-val">0.50 Cores</strong> (via cgroups)</dd>
+                    </div>
+                    <div class="meta-row">
+                        <dt>Root Filesystem:</dt>
+                        <dd><span class="badge badge-success">read_only: true</span></dd>
+                    </div>
+                </dl>
+            </div>
+        </article>
+
+        <!-- Card 3: Storage & VFS Mounts -->
+        <article class="card">
+            <div class="card-icon" aria-hidden="true">💾</div>
+            <div class="card-body">
+                <h3>VFS Volume Mounts</h3>
+                <p class="card-desc">Shared Docker volume <code>airutil_data</code> mounted at <code>{{ diag.storage_path }}</code>.</p>
+                <dl class="meta-list">
+                    <div class="meta-row">
+                        <dt>Mount Status:</dt>
+                        <dd>
+                            {% if diag.storage_mounted %}
+                                <span class="badge badge-success">Mounted</span>
+                            {% else %}
+                                <span class="badge badge-danger">Unmounted</span>
+                            {% endif %}
+                        </dd>
+                    </div>
+                    <div class="meta-row">
+                        <dt>Write Permissions:</dt>
+                        <dd>
+                            {% if diag.storage_writable %}
+                                <span class="badge badge-success">Writable (RW)</span>
+                            {% else %}
+                                <span class="badge badge-warning">Read-Only</span>
+                            {% endif %}
+                        </dd>
+                    </div>
+                    <div class="meta-row">
+                        <dt>Scratch Storage:</dt>
+                        <dd><code>/tmp</code> (tmpfs, 32MB)</dd>
+                    </div>
+                </dl>
+            </div>
+        </article>
+
+        <!-- Card 4: Architecture Topology -->
+        <article class="card">
+            <div class="card-icon" aria-hidden="true">🌐</div>
+            <div class="card-body">
+                <h3>Network & Security</h3>
+                <p class="card-desc">Bridge network <code>vault_net</code> isolating internal backends.</p>
+                <dl class="meta-list">
+                    <div class="meta-row">
+                        <dt>Public Port:</dt>
+                        <dd><strong>8080</strong> (Nginx Gateway only)</dd>
+                    </div>
+                    <div class="meta-row">
+                        <dt>Linux Capabilities:</dt>
+                        <dd><span class="badge badge-info">cap_drop: ALL</span></dd>
+                    </div>
+                    <div class="meta-row">
+                        <dt>Privilege Escalation:</dt>
+                        <dd><span class="badge badge-info">no-new-privileges</span></dd>
+                    </div>
+                </dl>
+            </div>
+        </article>
+    </div>
+</div>
+{% endblock %}

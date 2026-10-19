@@ -3,12 +3,14 @@
  * 
  * Demonstrates:
  * 1. Accessible Theme Switching (Light / Dark / System) with persistence.
- * 2. Live Round-Robin Ingress Testing against /healthz and / endpoints.
+ * 2. Mobile Responsive Drawer Navigation Toggle.
+ * 3. Live Round-Robin Ingress Testing against /healthz and / endpoints.
  */
 
 document.addEventListener("DOMContentLoaded", () => {
     initTheme();
     setupThemeToggle();
+    setupMobileMenu();
 });
 
 // ============================================================================
@@ -52,6 +54,22 @@ function setupThemeToggle() {
             nextTheme = "system";
         }
         applyTheme(nextTheme);
+    });
+}
+
+// ============================================================================
+// Mobile Navigation Drawer Toggle
+// ============================================================================
+
+function setupMobileMenu() {
+    const btn = document.getElementById("mobile-menu-btn");
+    const menu = document.getElementById("nav-menu");
+    if (!btn || !menu) return;
+
+    btn.addEventListener("click", () => {
+        const isExpanded = btn.getAttribute("aria-expanded") === "true";
+        btn.setAttribute("aria-expanded", !isExpanded);
+        menu.classList.toggle("show");
     });
 }
 

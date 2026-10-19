@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="system">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Airutil - Air-drop your files. Lock your logins. Beam anything.">
+    <title>{% block title %}Airutil - Student Vault & Beam Platform{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <!-- Top Navigation Bar -->
+    <header class="navbar" role="banner">
+        <div class="nav-container">
+            <div class="brand">
+                <a href="/" class="brand-link" aria-label="Airutil Home">
+                    <span class="brand-logo" aria-hidden="true">⚡</span>
+                    <div class="brand-text">
+                        <span class="brand-name">Airutil</span>
+                        <span class="brand-tagline">Air-drop your files. Lock your logins. Beam anything.</span>
+                    </div>
+                </a>
+            </div>
+
+            <!-- Mobile Navigation Toggle -->
+            <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="nav-menu">
+                <span class="menu-bar"></span>
+                <span class="menu-bar"></span>
+                <span class="menu-bar"></span>
+            </button>
+
+            <!-- Navigation Links -->
+            <nav class="nav-links" id="nav-menu" role="navigation" aria-label="Main Navigation">
+                <ul class="nav-list">
+                    {% if current_user %}
+                    <li><a href="/dashboard" class="nav-link {% if request.path == '/dashboard' %}active{% endif %}">Dashboard</a></li>
+                    <li><a href="/files" class="nav-link {% if request.path == '/files' %}active{% endif %}">Files</a></li>
+                    <li><a href="/vault" class="nav-link {% if request.path == '/vault' %}active{% endif %}">Vault</a></li>
+                    <li><a href="/beam" class="nav-link {% if request.path == '/beam' %}active{% endif %}">Beam</a></li>
+                    {% endif %}
+                    <li><a href="/oslab" class="nav-link {% if request.path == '/oslab' %}active{% endif %}">OS Lab</a></li>
+                </ul>
+
+                <div class="nav-actions">
+                    <!-- Replica Indicator Pill -->
+                    <span class="status-pill {{ 'pill-app1' if replica_name == 'app1' else 'pill-app2' }}" id="replica-pill" title="Serving container replica">
+                        <span class="indicator-dot"></span>
+                        <strong id="replica-label">{{ replica_name }}</strong>
+                    </span>
+
+                    <!-- Theme Toggle -->
+                    <button id="theme-toggle" class="btn-icon" aria-label="Toggle visual theme" title="Toggle theme">
+                        <span id="theme-icon">🌓</span>
+                    </button>
+
+                    <!-- Auth State Controls -->
+                    {% if current_user %}
+                    <div class="user-menu">
+                        <span class="user-greeting" title="{{ current_user.email }}">👤 {{ current_user.username }}</span>
+                        <form action="/logout" method="POST" class="inline-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-outline-danger btn-sm">Sign Out</button>
+                        </form>
+                    </div>
+                    {% else %}
+                    <div class="auth-buttons">
+                        <a href="/login" class="btn btn-outline btn-sm">Log In</a>
+                        <a href="/register" class="btn btn-primary btn-sm">Sign Up</a>
+                    </div>
+                    {% endif %}
+                </div>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Flash Messages Container -->
+    <div class="flash-container" role="region" aria-label="Alerts" aria-live="polite">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category }}" role="alert">
+                    <span class="alert-icon">
+                        {% if category == 'success' %}✓{% elif category == 'danger' %}✕{% elif category == 'warning' %}⚠{% else %}ℹ{% endif %}
+                    </span>
+                    <span class="alert-text">{{ message }}</span>
+                    <button type="button" class="alert-close" aria-label="Close alert" onclick="this.parentElement.remove()">×</button>
+                </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+    </div>
+
+    <!-- Main Content Area -->
+    <main id="main-content" class="content-container" role="main">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Global Footer -->
+    <footer class="footer" role="contentinfo">
+        <div class="footer-container">
+            <p><strong>Airutil</strong> &bull; Operating Systems Course Project &bull; Built with Docker Compose v2 & Linux Kernel Primitives</p>
+            <p class="footer-sub">Stateless multi-replica Flask containers sharing distributed Redis sessions and PostgreSQL storage.</p>
+        </div>
+    </footer>
+
+    <script src="/static/js/app.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>
