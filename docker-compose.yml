@@ -1,0 +1,226 @@
+# ==============================================================================
+# Airutil Multi-Container Docker Composition
+#
+# OS Concepts Demonstrated:
+# 1. Namespaces: Containers operate in isolated UTS, PID, IPC, NET, and MNT namespaces.
+# 2. Control Groups (cgroups v2): Hard CPU quotas and memory constraints on services.
+# 3. Read-Only Root Filesystem: read_only: true with volatile tmpfs (/tmp) for attack mitigation.
+# 4. Linux Capabilities: cap_drop: ALL + no-new-privileges: true prevents setuid escalation.
+# 5. Software-Defined Bridge Networking: vault_net isolates internal service sockets.
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # Nginx Gateway & Reverse Proxy
+  # Only published port on host (8080)
+  # ----------------------------------------------------------------------------
+  nginx:
+    container_name: airutil_nginx
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    depends_on:
+      app1:
+        condition: service_healthy
+      app2:
+        condition: service_healthy
+    networks:
+      - vault_net
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/nginx-healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 3s
+
+  # ----------------------------------------------------------------------------
+  # Application Replica 1 (Flask + Gunicorn)
+  # ----------------------------------------------------------------------------
+  app1:
+    container_name: airutil_app1
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - REPLICA_NAME=app1
+      - PORT=5000
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-airutil}:${POSTGRES_PASSWORD:-airutil_secure_vault_2026}@db:5432/${POSTGRES_DB:-airutil}
+      - REDIS_URL=redis://redis:6379/0
+      - STORAGE_PATH=/vault_storage
+      - SECRET_KEY=${SECRET_KEY:-airutil_super_secret_session_key_production_grade_32bytes}
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 128M
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    volumes:
+      - airutil_data:/vault_storage
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - vault_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:5000/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # ----------------------------------------------------------------------------
+  # Application Replica 2 (Flask + Gunicorn)
+  # ----------------------------------------------------------------------------
+  app2:
+    container_name: airutil_app2
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - REPLICA_NAME=app2
+      - PORT=5000
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-airutil}:${POSTGRES_PASSWORD:-airutil_secure_vault_2026}@db:5432/${POSTGRES_DB:-airutil}
+      - REDIS_URL=redis://redis:6379/0
+      - STORAGE_PATH=/vault_storage
+      - SECRET_KEY=${SECRET_KEY:-airutil_super_secret_session_key_production_grade_32bytes}
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 128M
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    volumes:
+      - airutil_data:/vault_storage
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - vault_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:5000/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # ----------------------------------------------------------------------------
+  # Background Worker (RQ)
+  # ----------------------------------------------------------------------------
+  worker:
+    container_name: airutil_worker
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "worker.worker"]
+    environment:
+      - WORKER_NAME=worker1
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-airutil}:${POSTGRES_PASSWORD:-airutil_secure_vault_2026}@db:5432/${POSTGRES_DB:-airutil}
+      - REDIS_URL=redis://redis:6379/0
+      - STORAGE_PATH=/vault_storage
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    volumes:
+      - airutil_data:/vault_storage
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - vault_net
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/worker_heartbeat || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # ----------------------------------------------------------------------------
+  # Redis 7 In-Memory Broker & Cache
+  # Ephemeral (no persistence, 64MB LRU memory cap)
+  # ----------------------------------------------------------------------------
+  redis:
+    container_name: airutil_redis
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+    restart: unless-stopped
+    networks:
+      - vault_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 3s
+
+  # ----------------------------------------------------------------------------
+  # PostgreSQL 16 Relational Database
+  # Persistent storage on airutil_pgdata
+  # ----------------------------------------------------------------------------
+  db:
+    container_name: airutil_db
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-airutil}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-airutil_secure_vault_2026}
+      POSTGRES_DB: ${POSTGRES_DB:-airutil}
+    volumes:
+      - airutil_pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - vault_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-airutil} -d ${POSTGRES_DB:-airutil}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+# ------------------------------------------------------------------------------
+# Isolated Bridge Network
+# ------------------------------------------------------------------------------
+networks:
+  vault_net:
+    name: vault_net
+    driver: bridge
+
+# ------------------------------------------------------------------------------
+# Named Persistent Storage Volumes
+# ------------------------------------------------------------------------------
+volumes:
+  airutil_data:
+    name: airutil_data
+  airutil_pgdata:
+    name: airutil_pgdata
