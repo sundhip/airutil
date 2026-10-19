@@ -1444,3 +1444,182 @@ code {
     padding: 8px;
 }
 
+/* ==============================================================================
+   Phase 4: Password Vault & Timer Styles
+   ============================================================================== */
+
+/* Vault Sticky Countdown Banner */
+.vault-timer-banner {
+    background-color: var(--warning-subtle);
+    border: 1px solid var(--warning);
+    border-radius: var(--radius-md);
+    padding: 0.85rem 1.25rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.vault-timer-text {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.vault-countdown-num {
+    font-family: var(--font-mono);
+    font-size: 1.25rem;
+    color: var(--warning);
+}
+
+.vault-timer-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Security Audit Scorecard */
+.vault-audit-card {
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    align-items: center;
+}
+
+.audit-metric {
+    display: flex;
+    flex-direction: column;
+}
+
+.audit-metric-num {
+    font-size: 1.75rem;
+    font-weight: 800;
+    font-family: var(--font-mono);
+    margin-bottom: 0.2rem;
+}
+
+.audit-metric-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.score-good { color: var(--success); }
+.score-warn { color: var(--warning); }
+.score-danger { color: var(--danger); }
+
+/* Password Generator Widget */
+.generator-card {
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+}
+
+.generated-display {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.generated-display input {
+    font-family: var(--font-mono);
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    background-color: var(--bg-surface-elevated);
+}
+
+.strength-meter-track {
+    width: 100%;
+    height: 6px;
+    background-color: var(--bg-surface-elevated);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+    margin-top: 0.4rem;
+}
+
+.strength-meter-fill {
+    height: 100%;
+    width: 0%;
+    transition: width 0.25s ease, background-color 0.25s ease;
+}
+
+/* Vault Item Card */
+.vault-item-card {
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.vault-item-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--brand-blue);
+}
+
+.vault-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.vault-item-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.secret-field-box {
+    display: flex;
+    align-items: center;
+    background-color: var(--bg-surface-elevated);
+    border-radius: var(--radius-sm);
+    padding: 0.4rem 0.6rem;
+    gap: 0.5rem;
+}
+
+.secret-field-input {
+    border: none;
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    flex: 1;
+    outline: none;
+    letter-spacing: 0.08em;
+}
+
+/* Toast Notification */
+.vault-toast {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    background-color: var(--text-primary);
+    color: var(--bg-primary);
+    padding: 0.75rem 1.25rem;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    font-size: 0.85rem;
+    font-weight: 600;
+    z-index: 2000;
+    display: none;
+    animation: fadeIn 0.2s ease-in-out;
+}
+
+

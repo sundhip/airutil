@@ -33,6 +33,7 @@ from flask import (
 
 from app.auth import auth_bp
 from app.files import files_bp
+from app.vault import vault_bp
 from app.db import get_db_cursor, init_db
 from app.session import (
     SESSION_COOKIE_NAME,
@@ -50,6 +51,7 @@ app.secret_key = os.getenv("SECRET_KEY", "airutil_super_secret_session_key_produ
 # Register Blueprints
 app.register_blueprint(auth_bp)
 app.register_blueprint(files_bp)
+app.register_blueprint(vault_bp)
 
 # OS Concept: Environment Variables
 REPLICA_NAME: str = os.getenv("REPLICA_NAME", "standalone-app")
@@ -385,11 +387,7 @@ def share_download_public(share_token: str):
     )
 
 
-@app.route("/vault", methods=["GET"])
-@login_required
-def vault():
-    """Password Vault placeholder for Phase 4."""
-    return render_template("placeholder.html", module_name="AES Password Vault", phase_num=4)
+
 
 
 @app.route("/beam", methods=["GET"])

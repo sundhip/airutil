@@ -65,6 +65,14 @@ ALTER TABLE files ADD COLUMN IF NOT EXISTS search_vector tsvector;
 UPDATE files SET original_name = filename WHERE original_name = '' OR original_name IS NULL;
 UPDATE files SET storage_name = filename WHERE storage_name = '' OR storage_name IS NULL;
 
+CREATE TABLE IF NOT EXISTS user_vault_settings (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    salt VARCHAR(64) NOT NULL,
+    verifier VARCHAR(128) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS vault_items (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -73,7 +81,7 @@ CREATE TABLE IF NOT EXISTS vault_items (
     encrypted_password TEXT NOT NULL,
     url VARCHAR(512),
     notes TEXT,
-    category VARCHAR(64) DEFAULT 'general',
+    category VARCHAR(64) DEFAULT 'General',
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
@@ -125,5 +133,6 @@ CREATE INDEX IF NOT EXISTS idx_files_sha256 ON files(sha256);
 CREATE INDEX IF NOT EXISTS idx_files_is_deleted ON files(is_deleted);
 CREATE INDEX IF NOT EXISTS idx_files_search_vector ON files USING gin(search_vector);
 CREATE INDEX IF NOT EXISTS idx_vault_items_user_id ON vault_items(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_vault_settings_user_id ON user_vault_settings(user_id);
 CREATE INDEX IF NOT EXISTS idx_share_links_token ON share_links(share_token);
 CREATE INDEX IF NOT EXISTS idx_activity_log_user_id ON activity_log(user_id);

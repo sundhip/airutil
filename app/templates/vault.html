@@ -1,0 +1,477 @@
+{% extends "base.html" %}
+
+{% block title %}Password Vault - Airutil{% endblock %}
+
+{% block content %}
+<div class="container vault-page" style="max-width: 1000px; margin: 0 auto;">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">AES Password Vault</h1>
+            <p class="text-muted">Zero-knowledge credential storage derived via scrypt and volatile 30s Redis unlock.</p>
+        </div>
+        <div class="header-actions">
+            {% if has_vault and is_unlocked %}
+            <button type="button" class="btn btn-outline btn-sm" id="btn-open-settings">⚙️ Settings</button>
+            <button type="button" class="btn btn-primary btn-sm" id="btn-add-item">+ Add Credential</button>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Toast for Clipboard Auto-Clear -->
+    <div class="vault-toast" id="vault-toast"></div>
+
+    <!-- STATE 1: First-Time Setup (No Master Password Yet) -->
+    {% if not has_vault %}
+    <div class="card" style="max-width: 520px; margin: 2rem auto; padding: 2rem;">
+        <div class="text-center" style="margin-bottom: 1.5rem;">
+            <span style="font-size: 3rem;" aria-hidden="true">🔐</span>
+            <h2 style="font-size: 1.35rem; font-weight: 700; margin-top: 0.5rem;">Initialize Master Password</h2>
+            <p class="text-muted" style="font-size: 0.85rem;">
+                Set a strong master password to encrypt your academic logins, Wi-Fi keys, and API secrets.
+            </p>
+        </div>
+
+        <form action="/vault/setup" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label for="master_password" class="form-label">Master Password (min 8 chars)</label>
+                <input type="password" name="master_password" id="master_password" class="form-control" placeholder="••••••••••••" required minlength="8">
+            </div>
+            <div class="form-group" style="margin-bottom: 1.5rem;">
+                <label for="confirm_password" class="form-label">Confirm Master Password</label>
+                <input type="password" name="confirm_password" id="confirm_password" class="form-control" placeholder="••••••••••••" required minlength="8">
+            </div>
+            <div class="alert alert-info" style="font-size: 0.8rem; margin-bottom: 1.5rem;">
+                💡 <strong>OS Zero-Knowledge Rule:</strong> Your master password and derived AES keys are <em>never</em> stored in the database or disk. Only a random cryptographic salt and HMAC verifier are saved.
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Create Vault & Unlock</button>
+        </form>
+    </div>
+
+    <!-- STATE 2 & 3: Vault Initialized -->
+    {% else %}
+
+        <!-- Active Unlock Countdown Timer Banner -->
+        {% if is_unlocked %}
+        <div class="vault-timer-banner">
+            <div class="vault-timer-text">
+                <span aria-hidden="true">⏱️</span>
+                <span>Vault Unlocked: <strong class="vault-countdown-num" id="countdown-val">{{ ttl_seconds }}</strong>s remaining</span>
+            </div>
+            <div class="vault-timer-actions">
+                <form action="/vault/extend" method="POST" class="inline-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-outline btn-sm" {% if extensions_left <= 0 %}disabled{% endif %}>
+                        Extend (+30s) [{{ extensions_left }}/3]
+                    </button>
+                </form>
+                <form action="/vault/lock" method="POST" class="inline-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-outline-danger btn-sm">Lock Now</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Offline Security Audit Scorecard -->
+        {% if audit %}
+        <div class="vault-audit-card">
+            <div class="audit-metric">
+                <span class="audit-metric-num {% if audit.health_score >= 80 %}score-good{% elif audit.health_score >= 50 %}score-warn{% else %}score-danger{% endif %}">
+                    {{ audit.health_score }}%
+                </span>
+                <span class="audit-metric-label">Vault Health Score</span>
+            </div>
+            <div class="audit-metric">
+                <span class="audit-metric-num">{{ audit.total }}</span>
+                <span class="audit-metric-label">Total Logins</span>
+            </div>
+            <div class="audit-metric">
+                <span class="audit-metric-num {% if audit.weak_count > 0 %}score-danger{% else %}score-good{% endif %}">
+                    {{ audit.weak_count }}
+                </span>
+                <span class="audit-metric-label">Weak Passwords</span>
+            </div>
+            <div class="audit-metric">
+                <span class="audit-metric-num {% if audit.duplicates_count > 0 %}score-warn{% else %}score-good{% endif %}">
+                    {{ audit.duplicates_count }}
+                </span>
+                <span class="audit-metric-label">Reused Credentials</span>
+            </div>
+        </div>
+        {% endif %}
+
+        {% else %}
+        <!-- Locked State Banner -->
+        <div class="card" style="margin-bottom: 2rem; padding: 1.5rem; background: var(--bg-surface-elevated);">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <span style="font-size: 2.2rem;" aria-hidden="true">🔒</span>
+                    <div>
+                        <h2 style="font-size: 1.15rem; font-weight: 700; margin: 0;">Vault is Locked</h2>
+                        <p class="text-muted" style="margin: 0; font-size: 0.85rem;">Derived encryption keys evicted from RAM. Enter master password to decrypt for 30s.</p>
+                    </div>
+                </div>
+                <form action="/vault/unlock" method="POST" style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="password" name="master_password" placeholder="Master Password" class="form-control" style="width: 220px;" required>
+                    <button type="submit" class="btn btn-primary btn-sm">Unlock Vault</button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Filter & Search Toolbar -->
+        <div class="files-toolbar">
+            <div class="chips-scroll">
+                <a href="/vault{% if search_query %}?q={{ search_query }}{% endif %}" class="chip {% if not current_category %}active{% endif %}">All</a>
+                {% for cat in categories %}
+                <a href="/vault?category={{ cat }}{% if search_query %}&q={{ search_query }}{% endif %}" class="chip {% if current_category == cat %}active{% endif %}">{{ cat }}</a>
+                {% endfor %}
+            </div>
+
+            <form action="/vault" method="GET" class="search-form">
+                {% if current_category %}<input type="hidden" name="category" value="{{ current_category }}">{% endif %}
+                <div class="search-input-group">
+                    <span aria-hidden="true">🔍</span>
+                    <input type="text" name="q" value="{{ search_query }}" placeholder="Search accounts & titles..." aria-label="Search logins">
+                    {% if search_query %}
+                    <a href="/vault" style="font-size: 0.8rem; text-decoration: none; color: var(--text-muted);">✕</a>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+
+        <!-- Credentials Grid -->
+        {% if not items %}
+        <div class="card text-center" style="padding: 3rem 1rem;">
+            <span style="font-size: 3rem; margin-bottom: 0.5rem; display: block;" aria-hidden="true">🔑</span>
+            <h3>No passwords found</h3>
+            <p class="text-muted">
+                {% if search_query or current_category %}
+                No items matched the current search or category filter.
+                {% elif is_unlocked %}
+                Click "+ Add Credential" to save your first login or API secret.
+                {% else %}
+                Unlock your vault to view and add your credentials.
+                {% endif %}
+            </p>
+        </div>
+        {% else %}
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 1.25rem; margin-bottom: 2rem;">
+            {% for item in items %}
+            <div class="vault-item-card">
+                <div class="vault-item-header">
+                    <div>
+                        <div class="vault-item-title">{{ item.title }}</div>
+                        <span class="badge badge-info" style="font-size: 0.72rem;">{{ item.category }}</span>
+                    </div>
+                    {% if item.is_weak %}
+                    <span class="badge" style="background: var(--danger-subtle); color: var(--danger); font-size: 0.7rem;" title="Weak password">⚠️ Weak</span>
+                    {% elif item.is_duplicate %}
+                    <span class="badge" style="background: var(--warning-subtle); color: var(--warning); font-size: 0.7rem;" title="Reused password">🔁 Reused</span>
+                    {% endif %}
+                </div>
+
+                {% if item.username %}
+                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                    👤 {{ item.username }}
+                </div>
+                {% endif %}
+
+                {% if item.url %}
+                <div style="font-size: 0.8rem;">
+                    🌐 <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer" style="color: var(--brand-blue); word-break: break-all;">{{ item.url }}</a>
+                </div>
+                {% endif %}
+
+                <!-- Secret / Password Box -->
+                <div class="secret-field-box">
+                    <input type="password" value="{{ item.secret }}" id="secret-val-{{ item.id }}" class="secret-field-input" readonly>
+                    {% if is_unlocked %}
+                    <button type="button" class="btn-icon btn-reveal" data-id="{{ item.id }}" title="Reveal password">👁️</button>
+                    <button type="button" class="btn-icon btn-copy" data-secret="{{ item.secret }}" title="Copy to clipboard">📋</button>
+                    {% endif %}
+                </div>
+
+                {% if item.notes_decrypted and item.notes_decrypted != '••••••••••••' %}
+                <div style="font-size: 0.8rem; background: var(--bg-surface-elevated); padding: 0.5rem; border-radius: var(--radius-sm); color: var(--text-muted); white-space: pre-wrap;">
+                    📝 {{ item.notes_decrypted }}
+                </div>
+                {% endif %}
+
+                {% if is_unlocked %}
+                <div style="margin-top: auto; display: flex; justify-content: flex-end; padding-top: 0.5rem; border-top: 1px solid var(--border-color);">
+                    <form action="/vault/items/{{ item.id }}/delete" method="POST" onsubmit="return confirm('Delete this credential from your vault?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-outline-danger btn-sm" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;">Delete</button>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+    {% endif %}
+</div>
+
+<!-- ==============================================================================
+     Modals: Add Item, Settings, and Password Generator
+     ============================================================================== -->
+
+<!-- Add Item Modal -->
+<div class="modal-backdrop" id="add-item-modal">
+    <div class="modal-content" style="max-width: 520px;">
+        <div class="modal-header">
+            <h3 style="font-size: 1.15rem; margin: 0;">Add Credential to Vault</h3>
+            <button type="button" class="btn-icon close-modal" aria-label="Close modal">✕</button>
+        </div>
+        <form action="/vault/items" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="modal-body">
+                <div class="form-group" style="margin-bottom: 0.85rem;">
+                    <label for="item_title" class="form-label">Title / Service Name</label>
+                    <input type="text" name="title" id="item_title" class="form-control" placeholder="e.g. University Wi-Fi or GitHub Token" required>
+                </div>
+                <div class="form-group" style="margin-bottom: 0.85rem;">
+                    <label for="item_category" class="form-label">Category</label>
+                    <select name="category" id="item_category" class="form-control">
+                        {% for c in categories %}
+                        <option value="{{ c }}">{{ c }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group" style="margin-bottom: 0.85rem;">
+                    <label for="item_username" class="form-label">Username / Email (Optional)</label>
+                    <input type="text" name="username" id="item_username" class="form-control" placeholder="student@univ.edu">
+                </div>
+                <div class="form-group" style="margin-bottom: 0.85rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                        <label for="item_secret" class="form-label" style="margin: 0;">Password / Secret Key</label>
+                        <button type="button" id="btn-toggle-generator" style="background: none; border: none; color: var(--brand-blue); font-size: 0.8rem; cursor: pointer;">⚡ Generate Strong</button>
+                    </div>
+                    <input type="text" name="secret" id="item_secret" class="form-control" placeholder="Enter or generate secret" required>
+                </div>
+
+                <!-- Inline Generator Box (Toggled) -->
+                <div id="generator-inline" style="display: none; background: var(--bg-surface-elevated); padding: 0.85rem; border-radius: var(--radius-sm); margin-bottom: 0.85rem;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 0.4rem;">
+                        <span>Length: <strong id="gen-len-label">16</strong></span>
+                        <span id="gen-strength-label" style="font-weight: 700; color: var(--success);">Strong</span>
+                    </div>
+                    <input type="range" id="gen-len-slider" min="8" max="36" value="16" style="width: 100%; margin-bottom: 0.5rem;">
+                    <div style="display: flex; gap: 1rem; font-size: 0.78rem; margin-bottom: 0.6rem;">
+                        <label><input type="checkbox" id="gen-symbols" checked> Symbols (!@#$)</label>
+                        <label><input type="checkbox" id="gen-numbers" checked> Numbers (0-9)</label>
+                    </div>
+                    <button type="button" id="btn-generate-now" class="btn btn-outline btn-sm" style="width: 100%;">Roll New Password</button>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 0.85rem;">
+                    <label for="item_url" class="form-label">Login URL (Optional)</label>
+                    <input type="url" name="url" id="item_url" class="form-control" placeholder="https://portal.univ.edu">
+                </div>
+                <div class="form-group">
+                    <label for="item_notes" class="form-label">Notes (Encrypted)</label>
+                    <textarea name="notes" id="item_notes" class="form-control" rows="2" placeholder="Recovery codes, PIN, or extra instructions"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline btn-sm close-modal">Cancel</button>
+                <button type="submit" class="btn btn-primary btn-sm">Encrypt & Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Settings Modal (Export, Import, Master Password Rotation) -->
+<div class="modal-backdrop" id="settings-modal">
+    <div class="modal-content" style="max-width: 540px;">
+        <div class="modal-header">
+            <h3 style="font-size: 1.15rem; margin: 0;">Vault Settings & Portability</h3>
+            <button type="button" class="btn-icon close-modal" aria-label="Close modal">✕</button>
+        </div>
+        <div class="modal-body" style="display: flex; flex-direction: column; gap: 1.5rem;">
+            <!-- Encrypted Backup Export -->
+            <div style="border-bottom: 1px solid var(--border-color); padding-bottom: 1.25rem;">
+                <h4 style="font-size: 0.95rem; font-weight: 700; margin-bottom: 0.35rem;">📦 Encrypted Export</h4>
+                <p class="text-muted" style="font-size: 0.8rem; margin-bottom: 0.75rem;">Download all credentials in an encrypted file (.enc) locked with your master key.</p>
+                <a href="/vault/export" class="btn btn-outline btn-sm">Download Backup (.enc)</a>
+            </div>
+
+            <!-- Encrypted Backup Import -->
+            <div style="border-bottom: 1px solid var(--border-color); padding-bottom: 1.25rem;">
+                <h4 style="font-size: 0.95rem; font-weight: 700; margin-bottom: 0.35rem;">📥 Encrypted Import</h4>
+                <p class="text-muted" style="font-size: 0.8rem; margin-bottom: 0.75rem;">Restore credentials from an encrypted Airutil backup file.</p>
+                <form action="/vault/import" method="POST" enctype="multipart/form-data" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="file" name="backup_file" accept=".enc" required style="font-size: 0.8rem;">
+                    <button type="submit" class="btn btn-primary btn-sm">Import</button>
+                </form>
+            </div>
+
+            <!-- Master Password Change -->
+            <div>
+                <h4 style="font-size: 0.95rem; font-weight: 700; margin-bottom: 0.35rem;">🔄 Rotate Master Password</h4>
+                <p class="text-muted" style="font-size: 0.8rem; margin-bottom: 0.75rem;">Re-encrypts all items atomically with a newly derived scrypt key.</p>
+                <form action="/vault/change-master" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="form-group" style="margin-bottom: 0.6rem;">
+                        <input type="password" name="current_master" placeholder="Current Master Password" class="form-control" required>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0.6rem;">
+                        <input type="password" name="new_master" placeholder="New Master Password (min 8 chars)" class="form-control" minlength="8" required>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0.75rem;">
+                        <input type="password" name="confirm_new_master" placeholder="Confirm New Master Password" class="form-control" minlength="8" required>
+                    </div>
+                    <button type="submit" class="btn btn-outline-danger btn-sm">Re-Encrypt Entire Vault</button>
+                </form>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline btn-sm close-modal">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==============================================================================
+     Phase 4 Client-Side Logic: 30s Countdown, Clipboard Auto-Clear, Generator
+     ============================================================================== -->
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    // 1. Live 30s Countdown Timer
+    const countdownEl = document.getElementById("countdown-val");
+    if (countdownEl) {
+        let remaining = parseInt(countdownEl.textContent, 10);
+        const timerInterval = setInterval(() => {
+            remaining--;
+            if (remaining <= 0) {
+                clearInterval(timerInterval);
+                countdownEl.textContent = "0";
+                showToast("Vault access window expired. Re-locking...");
+                setTimeout(() => { window.location.reload(); }, 900);
+            } else {
+                countdownEl.textContent = remaining;
+            }
+        }, 1000);
+    }
+
+    // 2. Modals toggling
+    const addItemBtn = document.getElementById("btn-add-item");
+    const addItemModal = document.getElementById("add-item-modal");
+    const settingsBtn = document.getElementById("btn-open-settings");
+    const settingsModal = document.getElementById("settings-modal");
+
+    if (addItemBtn && addItemModal) {
+        addItemBtn.addEventListener("click", () => addItemModal.classList.add("open"));
+    }
+    if (settingsBtn && settingsModal) {
+        settingsBtn.addEventListener("click", () => settingsModal.classList.add("open"));
+    }
+
+    document.querySelectorAll(".close-modal").forEach(b => {
+        b.addEventListener("click", () => {
+            document.querySelectorAll(".modal-backdrop").forEach(m => m.classList.remove("open"));
+        });
+    });
+
+    document.querySelectorAll(".modal-backdrop").forEach(backdrop => {
+        backdrop.addEventListener("click", (e) => {
+            if (e.target === backdrop) backdrop.classList.remove("open");
+        });
+    });
+
+    // 3. Password Reveal Toggle
+    document.querySelectorAll(".btn-reveal").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const id = btn.getAttribute("data-id");
+            const input = document.getElementById(`secret-val-${id}`);
+            if (input) {
+                if (input.type === "password") {
+                    input.type = "text";
+                    btn.textContent = "🙈";
+                } else {
+                    input.type = "password";
+                    btn.textContent = "👁️";
+                }
+            }
+        });
+    });
+
+    // 4. Copy to Clipboard with 15-Second Auto-Clear
+    let clipboardTimeout = null;
+    document.querySelectorAll(".btn-copy").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const secret = btn.getAttribute("data-secret");
+            if (!secret) return;
+
+            navigator.clipboard.writeText(secret).then(() => {
+                showToast("Password copied! Clipboard will auto-clear in 15 seconds.");
+
+                if (clipboardTimeout) clearTimeout(clipboardTimeout);
+                clipboardTimeout = setTimeout(() => {
+                    navigator.clipboard.writeText("").then(() => {
+                        showToast("🧹 Clipboard auto-cleared for security.");
+                    }).catch(() => {});
+                }, 15000);
+            });
+        });
+    });
+
+    // 5. Password Generator
+    const toggleGenBtn = document.getElementById("btn-toggle-generator");
+    const genInline = document.getElementById("generator-inline");
+    const genSlider = document.getElementById("gen-len-slider");
+    const genLenLabel = document.getElementById("gen-len-label");
+    const genSymbols = document.getElementById("gen-symbols");
+    const genNumbers = document.getElementById("gen-numbers");
+    const genNowBtn = document.getElementById("btn-generate-now");
+    const itemSecretInput = document.getElementById("item_secret");
+
+    if (toggleGenBtn && genInline) {
+        toggleGenBtn.addEventListener("click", () => {
+            const isOpen = genInline.style.display === "block";
+            genInline.style.display = isOpen ? "none" : "block";
+            if (!isOpen) generatePassword();
+        });
+    }
+
+    if (genSlider) {
+        genSlider.addEventListener("input", () => {
+            genLenLabel.textContent = genSlider.value;
+            generatePassword();
+        });
+    }
+
+    if (genNowBtn) genNowBtn.addEventListener("click", generatePassword);
+    if (genSymbols) genSymbols.addEventListener("change", generatePassword);
+    if (genNumbers) genNumbers.addEventListener("change", generatePassword);
+
+    function generatePassword() {
+        const len = parseInt(genSlider.value, 10);
+        let chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        if (genNumbers.checked) chars += "0123456789";
+        if (genSymbols.checked) chars += "!@#$%^&*()-_=+[]{}";
+
+        let result = "";
+        const array = new Uint32Array(len);
+        window.crypto.getRandomValues(array);
+        for (let i = 0; i < len; i++) {
+            result += chars[array[i] % chars.length];
+        }
+
+        if (itemSecretInput) itemSecretInput.value = result;
+    }
+
+    function showToast(msg) {
+        const toast = document.getElementById("vault-toast");
+        if (toast) {
+            toast.textContent = msg;
+            toast.style.display = "block";
+            setTimeout(() => { toast.style.display = "none"; }, 3500);
+        }
+    }
+});
+</script>
+{% endblock %}
