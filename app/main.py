@@ -35,6 +35,7 @@ from app.auth import auth_bp
 from app.files import files_bp
 from app.vault import vault_bp
 from app.beam import beam_bp
+from app.oslab import oslab_bp
 from app.db import get_db_cursor, init_db
 from app.session import (
     SESSION_COOKIE_NAME,
@@ -54,6 +55,7 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(files_bp)
 app.register_blueprint(vault_bp)
 app.register_blueprint(beam_bp)
+app.register_blueprint(oslab_bp)
 
 # OS Concept: Environment Variables
 REPLICA_NAME: str = os.getenv("REPLICA_NAME", "standalone-app")
@@ -266,12 +268,6 @@ def dashboard():
         replica_name=REPLICA_NAME
     )
 
-
-@app.route("/oslab", methods=["GET"])
-def oslab():
-    """OS Lab primitives live inspection view."""
-    diagnostics = get_system_diagnostics()
-    return render_template("oslab.html", diag=diagnostics)
 
 
 @app.route("/share/<share_token>", methods=["GET"])

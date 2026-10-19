@@ -4,118 +4,568 @@
 
 {% block content %}
 <div class="oslab-container">
-    <div class="hero-card">
-        <span class="tag">Operating Systems Live Laboratory</span>
-        <h1>Linux Kernel & Container Isolation Primitives</h1>
-        <p class="subtitle">
-            Live inspection of the process, filesystem, and control group limits enforced by the Linux kernel on container replica <code>{{ diag.replica_name }}</code>.
-        </p>
-    </div>
+    <!-- Top Hero Section -->
+    <header class="oslab-hero" role="region" aria-label="OS Lab Overview">
+        <div class="oslab-hero-content">
+            <span class="badge badge-info" style="font-weight: 700; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05rem;">
+                Operating Systems Live Laboratory
+            </span>
+            <h1 class="oslab-hero-title">Linux Kernel & Container Isolation Primitives</h1>
+            <p class="oslab-hero-desc">
+                Direct, live inspection of the Linux kernel mechanisms enforcing container isolation:
+                cgroups v2 bandwidth quotas, namespace inode symlinks, OverlayFS union mounts, and Nginx reverse-proxy load balancing.
+            </p>
+        </div>
+        <div class="oslab-live-indicator" id="live-indicator-pill">
+            <span class="pulse-dot pulse-green" aria-hidden="true"></span>
+            <span>Live Telemetry (<span id="refresh-interval">1s</span>)</span>
+            <span class="badge {{ 'badge-app1' if replica_name == 'app1' else 'badge-app2' }}" id="serving-replica-pill" style="margin-left: 0.35rem;">
+                {{ replica_name }}
+            </span>
+        </div>
+    </header>
 
-    <div class="cards-grid">
-        <!-- Card 1: UTS & PID Namespaces -->
-        <article class="card">
-            <div class="card-icon" aria-hidden="true">🏷️</div>
-            <div class="card-body">
-                <h3>Namespace Isolation</h3>
-                <p class="card-desc">Processes and network sockets isolated per container namespace.</p>
-                <dl class="meta-list">
-                    <div class="meta-row">
-                        <dt>UTS Hostname:</dt>
-                        <dd><code>{{ diag.hostname }}</code></dd>
-                    </div>
-                    <div class="meta-row">
-                        <dt>PID inside NS:</dt>
-                        <dd><code>{{ diag.pid }}</code> (Parent: <code>{{ diag.ppid }}</code>)</dd>
-                    </div>
-                    <div class="meta-row">
-                        <dt>UID / GID:</dt>
-                        <dd><code>{{ diag.uid }}</code> : <code>{{ diag.gid }}</code> (non-root: airutil)</dd>
-                    </div>
-                </dl>
+    <div class="oslab-grid">
+        <!-- ==============================================================================
+             Card 1: Control Groups v2 (cgroups v2)
+             ============================================================================== -->
+        <article class="oslab-card" id="card-cgroups">
+            <div class="oslab-card-header">
+                <div class="oslab-card-title-wrap">
+                    <span class="oslab-card-icon" aria-hidden="true">⚖️</span>
+                    <h2 class="oslab-card-title">cgroups v2 Resource Limits</h2>
+                </div>
+                <span class="badge badge-success" id="cgroup-version-badge">{{ cgroup.cgroup_version | upper }}</span>
             </div>
+
+            <!-- Memory Gauge -->
+            <div class="gauge-block">
+                <div class="gauge-label-row">
+                    <span class="gauge-label">Memory Usage (/sys/fs/cgroup/memory.current)</span>
+                    <span class="gauge-val" id="mem-gauge-text">
+                        {{ cgroup.memory_current_human }} / {{ cgroup.memory_limit_human }}
+                    </span>
+                </div>
+                <div class="gauge-track" role="progressbar" aria-valuenow="{{ cgroup.memory_percent }}" aria-valuemin="0" aria-valuemax="100" id="mem-progress-bar">
+                    <div class="gauge-fill {{ 'gauge-fill-danger' if cgroup.memory_percent > 85 else ('gauge-fill-warning' if cgroup.memory_percent > 65 else 'gauge-fill-normal') }}"
+                         id="mem-gauge-fill"
+                         style="width: {{ cgroup.memory_percent }}%;"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted);">
+                    <span>Utilization: <strong id="mem-percent-val">{{ cgroup.memory_percent }}%</strong></span>
+                    <span>Peak: <span id="mem-peak-val">{{ (cgroup.memory_peak_bytes / 1048576) | round(1) if cgroup.memory_peak_bytes else 'N/A' }} MiB</span></span>
+                </div>
+            </div>
+
+            <!-- CPU Bandwidth & CFS Throttling -->
+            <dl class="kv-grid">
+                <div class="kv-item">
+                    <dt>CPU Limit</dt>
+                    <dd id="cpu-limit-val">{{ cgroup.cpu_cores_limit }} Cores</dd>
+                </div>
+                <div class="kv-item">
+                    <dt>CFS Period</dt>
+                    <dd id="cpu-period-val">{{ cgroup.cpu_period_usec or 100000 }} µs</dd>
+                </div>
+                <div class="kv-item">
+                    <dt>CFS Quota</dt>
+                    <dd id="cpu-quota-val">{{ cgroup.cpu_quota_usec or 50000 }} µs</dd>
+                </div>
+                <div class="kv-item">
+                    <dt>CPU Throttled</dt>
+                    <dd id="cpu-throttled-val" style="color: var(--danger);">{{ cgroup.nr_throttled }}</dd>
+                </div>
+                <div class="kv-item">
+                    <dt>Throttled Time</dt>
+                    <dd id="cpu-throttled-sec">{{ cgroup.throttled_sec }} s</dd>
+                </div>
+                <div class="kv-item">
+                    <dt>Total Periods</dt>
+                    <dd id="cpu-periods-val">{{ cgroup.nr_periods }}</dd>
+                </div>
+            </dl>
+
+            <details class="pedagogy-accordion">
+                <summary>💡 What is cgroup v2?</summary>
+                <div class="pedagogy-content">
+                    <strong>Control Groups (cgroups v2)</strong> provide unified kernel resource accounting and partitioning.
+                    The Linux Completely Fair Scheduler (CFS) enforces CPU limits via <code>cpu.max</code> (quota per period).
+                    For this container, 50,000 µs runtime per 100,000 µs period caps execution at exactly 0.5 CPU cores.
+                    If a process consumes more, the kernel deschedules it and increments <code>nr_throttled</code>.
+                </div>
+            </details>
         </article>
 
-        <!-- Card 2: Control Groups (cgroups v2) -->
-        <article class="card">
-            <div class="card-icon" aria-hidden="true">⚖️</div>
-            <div class="card-body">
-                <h3>cgroups v2 Quotas</h3>
-                <p class="card-desc">Kernel enforced hard limit on physical memory and CPU scheduling.</p>
-                <dl class="meta-list">
-                    <div class="meta-row">
-                        <dt>Memory Limit:</dt>
-                        <dd><strong class="highlight-val">{{ diag.cgroup_memory_limit }}</strong></dd>
-                    </div>
-                    <div class="meta-row">
-                        <dt>CPU Limit:</dt>
-                        <dd><strong class="highlight-val">0.50 Cores</strong> (via cgroups)</dd>
-                    </div>
-                    <div class="meta-row">
-                        <dt>Root Filesystem:</dt>
-                        <dd><span class="badge badge-success">read_only: true</span></dd>
-                    </div>
-                </dl>
+        <!-- ==============================================================================
+             Card 2: Linux Namespaces & Process Isolation
+             ============================================================================== -->
+        <article class="oslab-card" id="card-namespaces">
+            <div class="oslab-card-header">
+                <div class="oslab-card-title-wrap">
+                    <span class="oslab-card-icon" aria-hidden="true">🏷️</span>
+                    <h2 class="oslab-card-title">Linux Namespaces</h2>
+                </div>
+                <span class="badge badge-info">Process Isolation</span>
             </div>
+
+            <div style="overflow-x: auto;">
+                <table class="ns-table" aria-label="Container Namespaces Inode Table">
+                    <thead>
+                        <tr>
+                            <th>Namespace</th>
+                            <th>Kernel Inode Target (/proc/self/ns/*)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ns-table-body">
+                        {% for ns_name, ns_target in ns.namespaces.items() %}
+                        <tr>
+                            <td><strong>{{ ns_name }}</strong></td>
+                            <td><code>{{ ns_target }}</code></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <dl class="kv-grid">
+                <div class="kv-item">
+                    <dt>UTS Hostname</dt>
+                    <dd id="uts-hostname">{{ ns.hostname }}</dd>
+                </div>
+                <div class="kv-item">
+                    <dt>Container PID</dt>
+                    <dd id="proc-pid">{{ ns.pid }}</dd>
+                </div>
+                <div class="kv-item">
+                    <dt>Parent PID</dt>
+                    <dd id="proc-ppid">{{ ns.ppid }}</dd>
+                </div>
+                <div class="kv-item">
+                    <dt>UID / GID</dt>
+                    <dd id="proc-uid">{{ ns.uid }}:{{ ns.gid }}</dd>
+                </div>
+            </dl>
+
+            <div style="font-size: 0.8rem; background-color: var(--bg-surface-elevated); padding: 0.65rem 0.85rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                <div style="font-weight: 700; color: var(--text-muted); text-transform: uppercase; font-size: 0.68rem; margin-bottom: 0.2rem;">PID 1 Evidence (/proc/1/cmdline)</div>
+                <code id="pid1-cmdline-val" style="color: var(--brand-blue); word-break: break-all;">{{ ns.pid1_cmd }}</code>
+            </div>
+
+            <details class="pedagogy-accordion">
+                <summary>💡 What are Linux Namespaces?</summary>
+                <div class="pedagogy-content">
+                    Namespaces partition global kernel resources. <code>CLONE_NEWPID</code> makes Gunicorn master appear as PID 1 inside the container,
+                    preventing visibility of host processes. <code>CLONE_NEWNET</code> isolates network interfaces and loopback.
+                    <code>CLONE_NEWUTS</code> provides an independent hostname.
+                </div>
+            </details>
         </article>
 
-        <!-- Card 3: Storage & VFS Mounts -->
-        <article class="card">
-            <div class="card-icon" aria-hidden="true">💾</div>
-            <div class="card-body">
-                <h3>VFS Volume Mounts</h3>
-                <p class="card-desc">Shared Docker volume <code>airutil_data</code> mounted at <code>{{ diag.storage_path }}</code>.</p>
-                <dl class="meta-list">
-                    <div class="meta-row">
-                        <dt>Mount Status:</dt>
-                        <dd>
-                            {% if diag.storage_mounted %}
-                                <span class="badge badge-success">Mounted</span>
-                            {% else %}
-                                <span class="badge badge-danger">Unmounted</span>
-                            {% endif %}
-                        </dd>
-                    </div>
-                    <div class="meta-row">
-                        <dt>Write Permissions:</dt>
-                        <dd>
-                            {% if diag.storage_writable %}
-                                <span class="badge badge-success">Writable (RW)</span>
-                            {% else %}
-                                <span class="badge badge-warning">Read-Only</span>
-                            {% endif %}
-                        </dd>
-                    </div>
-                    <div class="meta-row">
-                        <dt>Scratch Storage:</dt>
-                        <dd><code>/tmp</code> (tmpfs, 32MB)</dd>
-                    </div>
-                </dl>
+        <!-- ==============================================================================
+             Card 3: OverlayFS & VFS Volume Mounts
+             ============================================================================== -->
+        <article class="oslab-card" id="card-overlayfs">
+            <div class="oslab-card-header">
+                <div class="oslab-card-title-wrap">
+                    <span class="oslab-card-icon" aria-hidden="true">🥞</span>
+                    <h2 class="oslab-card-title">OverlayFS & Mounts</h2>
+                </div>
+                <span class="badge badge-success">read_only: true</span>
             </div>
+
+            <div style="display: flex; flex-direction: column; gap: 0.65rem;">
+                <div>
+                    <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.25rem;">
+                        Rootfs Union Mount (/proc/self/mountinfo)
+                    </div>
+                    <div class="telemetry-code" id="overlayfs-telemetry">
+{% if mounts.overlay.found %}
+[OverlayFS Type: overlay]
+LowerDir ({{ mounts.overlay.lower_layers_count }} Read-Only Image Layers):
+{{ mounts.overlay.lowerdir }}
+
+UpperDir (Container Scratchpad):
+{{ mounts.overlay.upperdir or '(Disabled: Rootfs is Read-Only)' }}
+
+WorkDir:
+{{ mounts.overlay.workdir or '(None)' }}
+{% else %}
+OverlayFS mount metadata not directly accessible in current runtime.
+{% endif %}
+                    </div>
+                </div>
+
+                <div style="background-color: var(--bg-surface-elevated); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.75rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                        <strong style="font-size: 0.85rem;">Volume Mount: <code>{{ mounts.volume.mount_point }}</code></strong>
+                        <span class="badge badge-success">Persistent VFS</span>
+                    </div>
+                    <p style="margin: 0; font-size: 0.8rem; color: var(--text-secondary);">
+                        Named Docker volume <code>airutil_data</code> mounted directly to bypass OverlayFS.
+                        Shared across <code>app1</code>, <code>app2</code>, and <code>worker</code> for concurrent file operations.
+                    </p>
+                </div>
+            </div>
+
+            <details class="pedagogy-accordion">
+                <summary>💡 OverlayFS vs. Dedicated Volumes</summary>
+                <div class="pedagogy-content">
+                    Docker root filesystems combine immutable read-only image layers (<code>lowerdir</code>) with an ephemeral writeable layer (<code>upperdir</code>).
+                    Because Airutil enforces <code>read_only: true</code>, rootfs writes trigger kernel <code>EROFS</code>.
+                    Persistent storage (<code>/vault_storage</code>) mounts directly from the host filesystem, providing durable I/O without union overhead.
+                </div>
+            </details>
         </article>
 
-        <!-- Card 4: Architecture Topology -->
-        <article class="card">
-            <div class="card-icon" aria-hidden="true">🌐</div>
-            <div class="card-body">
-                <h3>Network & Security</h3>
-                <p class="card-desc">Bridge network <code>vault_net</code> isolating internal backends.</p>
-                <dl class="meta-list">
-                    <div class="meta-row">
-                        <dt>Public Port:</dt>
-                        <dd><strong>8080</strong> (Nginx Gateway only)</dd>
-                    </div>
-                    <div class="meta-row">
-                        <dt>Linux Capabilities:</dt>
-                        <dd><span class="badge badge-info">cap_drop: ALL</span></dd>
-                    </div>
-                    <div class="meta-row">
-                        <dt>Privilege Escalation:</dt>
-                        <dd><span class="badge badge-info">no-new-privileges</span></dd>
-                    </div>
-                </dl>
+        <!-- ==============================================================================
+             Card 4: Round-Robin Load Balancing
+             ============================================================================== -->
+        <article class="oslab-card replica-balance-card" id="card-loadbalancer">
+            <div class="oslab-card-header">
+                <div class="oslab-card-title-wrap">
+                    <span class="oslab-card-icon" aria-hidden="true">🔄</span>
+                    <h2 class="oslab-card-title">Round-Robin Replicas</h2>
+                </div>
+                <span class="badge badge-info">Nginx Gateway</span>
             </div>
+
+            <p style="font-size: 0.88rem; color: var(--text-secondary); margin: 0;">
+                Nginx (port 8080) distributes incoming HTTP requests across identical application containers on <code>vault_net</code>.
+            </p>
+
+            <dl class="kv-grid">
+                <div class="kv-item" style="border-left: 3px solid var(--replica-app1-border);">
+                    <dt>app1 Requests</dt>
+                    <dd id="replica-app1-count">{{ redis.app1_reqs }}</dd>
+                </div>
+                <div class="kv-item" style="border-left: 3px solid var(--replica-app2-border);">
+                    <dt>app2 Requests</dt>
+                    <dd id="replica-app2-count">{{ redis.app2_reqs }}</dd>
+                </div>
+            </dl>
+
+            <!-- Visual balance bar -->
+            <div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem; font-weight: 700; color: var(--text-muted); margin-bottom: 0.25rem;">
+                    <span id="label-app1-split">app1: 50%</span>
+                    <span id="label-app2-split">app2: 50%</span>
+                </div>
+                <div class="replica-split-bar" aria-label="Traffic distribution between replicas">
+                    <div class="replica-split-app1" id="bar-app1-split" style="width: 50%;"></div>
+                    <div class="replica-split-app2" id="bar-app2-split" style="width: 50%;"></div>
+                </div>
+            </div>
+
+            <details class="pedagogy-accordion">
+                <summary>💡 Why stateless application replicas?</summary>
+                <div class="pedagogy-content">
+                    Because user sessions and transient secrets reside in Redis (<code>session:*</code>, <code>unlock:*</code>),
+                    any replica can handle any user request seamlessly. Nginx round-robin balances CPU load without session pinning.
+                </div>
+            </details>
+        </article>
+
+        <!-- ==============================================================================
+             Card 5: Live CPU Stress Test (CFS Throttling Trigger)
+             ============================================================================== -->
+        <article class="oslab-card stress-card" id="card-stresstest">
+            <div class="oslab-card-header">
+                <div class="oslab-card-title-wrap">
+                    <span class="oslab-card-icon" aria-hidden="true">🔥</span>
+                    <h2 class="oslab-card-title">CFS Throttling Stress Test</h2>
+                </div>
+                <span class="badge badge-warning">10-Second Probe</span>
+            </div>
+
+            <p style="font-size: 0.88rem; color: var(--text-secondary); margin: 0;">
+                Spawns a busy-loop calculation thread inside this container. Watch <strong>CPU Throttled</strong> counter jump in Card 1 as the Linux kernel caps execution to 50% CPU!
+            </p>
+
+            <button type="button" class="stress-btn" id="btn-stress-test" aria-label="Trigger CPU Stress Test">
+                <span id="stress-btn-icon">⚡</span>
+                <span id="stress-btn-label">Run 10s CPU Stress Test</span>
+            </button>
+
+            <div id="stress-status-msg" style="font-size: 0.82rem; font-weight: 600; display: none; padding: 0.5rem 0.75rem; border-radius: var(--radius-sm);"></div>
+
+            <details class="pedagogy-accordion">
+                <summary>💡 What causes CFS Throttling?</summary>
+                <div class="pedagogy-content">
+                    When the busy-loop thread runs, it demands 100% of a core. But Docker's <code>cpus: '0.50'</code> allows only 50ms of execution per 100ms window.
+                    The Linux kernel forcibly suspends the thread for the remaining 50ms, protecting neighboring processes on the host.
+                </div>
+            </details>
+        </article>
+
+        <!-- ==============================================================================
+             Card 6: Fault Tolerance & High Availability
+             ============================================================================== -->
+        <article class="oslab-card" id="card-fault-tolerance">
+            <div class="oslab-card-header">
+                <div class="oslab-card-title-wrap">
+                    <span class="oslab-card-icon" aria-hidden="true">🛡️</span>
+                    <h2 class="oslab-card-title">Fault Tolerance Demo</h2>
+                </div>
+                <span class="badge badge-info">Zero Downtime</span>
+            </div>
+
+            <p style="font-size: 0.88rem; color: var(--text-secondary); margin: 0;">
+                Simulate a sudden container crash on your host terminal. Nginx automatically fails over all traffic to the surviving replica:
+            </p>
+
+            <div class="terminal-box">
+                <code>docker stop airutil_app1</code>
+                <button type="button" class="copy-cli-btn" data-copy="docker stop airutil_app1" title="Copy to clipboard">
+                    📋 Copy
+                </button>
+            </div>
+
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0;">
+                Refresh this page: the active replica instantly switches to <code>app2</code>. Re-start it whenever you like:
+            </p>
+
+            <div class="terminal-box">
+                <code>docker start airutil_app1</code>
+                <button type="button" class="copy-cli-btn" data-copy="docker start airutil_app1" title="Copy to clipboard">
+                    📋 Copy
+                </button>
+            </div>
+
+            <details class="pedagogy-accordion">
+                <summary>💡 How does Nginx detect replica failure?</summary>
+                <div class="pedagogy-content">
+                    Nginx uses <code>max_fails=3 fail_timeout=10s</code> in its upstream block. When TCP connection fails or timeouts occur,
+                    Nginx transparently passes the client's request to the remaining backend container with zero user-visible error.
+                </div>
+            </details>
+        </article>
+
+        <!-- ==============================================================================
+             Card 7: Redis Ephemeral Store Telemetry
+             ============================================================================== -->
+        <article class="oslab-card" id="card-redis">
+            <div class="oslab-card-header">
+                <div class="oslab-card-title-wrap">
+                    <span class="oslab-card-icon" aria-hidden="true">⚡</span>
+                    <h2 class="oslab-card-title">Redis Ephemeral Store</h2>
+                </div>
+                <span class="badge badge-success">Zero Persistence</span>
+            </div>
+
+            <dl class="kv-grid">
+                <div class="kv-item">
+                    <dt>Clients</dt>
+                    <dd id="redis-clients-val">{{ redis.connected_clients }}</dd>
+                </div>
+                <div class="kv-item">
+                    <dt>RAM Used</dt>
+                    <dd id="redis-memory-val">{{ redis.used_memory_human }}</dd>
+                </div>
+                <div class="kv-item">
+                    <dt>Active Vaults</dt>
+                    <dd id="redis-unlock-val">{{ redis.active_unlock_keys }}</dd>
+                </div>
+                <div class="kv-item">
+                    <dt>Active Beams</dt>
+                    <dd id="redis-beam-val">{{ redis.active_beam_keys }}</dd>
+                </div>
+            </dl>
+
+            <details class="pedagogy-accordion">
+                <summary>💡 Why zero persistence for secrets?</summary>
+                <div class="pedagogy-content">
+                    <code>airutil_redis</code> runs in volatile mode with <code>save ""</code> and AOF disabled.
+                    Burn-on-Read Beam payloads and 30-second Vault master keys exist purely in Linux kernel RAM pages
+                    and leave zero residual footprint on disk blocks or swap.
+                </div>
+            </details>
         </article>
     </div>
 </div>
+
+<!-- ==============================================================================
+     Live Telemetry Polling & Stress Test Script
+     ============================================================================== -->
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const csrfToken = "{{ csrf_token() }}";
+    let isStressRunning = false;
+
+    // Helper: update text content safely
+    function setElemText(id, text) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+    }
+
+    // Live Telemetry Poller (every 1s)
+    async function fetchTelemetry() {
+        try {
+            const resp = await fetch("/api/oslab", {
+                headers: { "Accept": "application/json" }
+            });
+            if (!resp.ok) return;
+
+            const data = await resp.json();
+            const cg = data.cgroup || {};
+            const ns = data.ns || {};
+            const red = data.redis || {};
+            const m = data.mounts || {};
+
+            // Update Serving Replica Pill
+            const repPill = document.getElementById("serving-replica-pill");
+            if (repPill && data.replica_name) {
+                repPill.textContent = data.replica_name;
+                repPill.className = `badge ${data.replica_name === 'app1' ? 'badge-app1' : 'badge-app2'}`;
+            }
+
+            // Update Memory
+            if (cg.memory_percent !== undefined) {
+                setElemText("mem-gauge-text", `${cg.memory_current_human} / ${cg.memory_limit_human}`);
+                setElemText("mem-percent-val", `${cg.memory_percent}%`);
+                const memFill = document.getElementById("mem-gauge-fill");
+                if (memFill) {
+                    memFill.style.width = `${cg.memory_percent}%`;
+                    memFill.className = `gauge-fill ${cg.memory_percent > 85 ? 'gauge-fill-danger' : (cg.memory_percent > 65 ? 'gauge-fill-warning' : 'gauge-fill-normal')}`;
+                }
+            }
+            if (cg.memory_peak_bytes) {
+                setElemText("mem-peak-val", `${(cg.memory_peak_bytes / 1048576).toFixed(1)} MiB`);
+            }
+
+            // Update CPU & CFS Throttling
+            if (cg.cpu_cores_limit !== undefined) setElemText("cpu-limit-val", `${cg.cpu_cores_limit} Cores`);
+            if (cg.cpu_period_usec) setElemText("cpu-period-val", `${cg.cpu_period_usec} µs`);
+            if (cg.cpu_quota_usec) setElemText("cpu-quota-val", `${cg.cpu_quota_usec} µs`);
+            if (cg.nr_throttled !== undefined) setElemText("cpu-throttled-val", cg.nr_throttled);
+            if (cg.throttled_sec !== undefined) setElemText("cpu-throttled-sec", `${cg.throttled_sec} s`);
+            if (cg.nr_periods !== undefined) setElemText("cpu-periods-val", cg.nr_periods);
+
+            // Update Namespaces PID
+            if (ns.pid) setElemText("proc-pid", ns.pid);
+            if (ns.ppid) setElemText("proc-ppid", ns.ppid);
+            if (ns.hostname) setElemText("uts-hostname", ns.hostname);
+
+            // Update Replica Counter
+            const app1 = red.app1_reqs || 0;
+            const app2 = red.app2_reqs || 0;
+            setElemText("replica-app1-count", app1);
+            setElemText("replica-app2-count", app2);
+
+            const total = app1 + app2;
+            if (total > 0) {
+                const p1 = Math.round((app1 / total) * 100);
+                const p2 = 100 - p1;
+                setElemText("label-app1-split", `app1: ${p1}%`);
+                setElemText("label-app2-split", `app2: ${p2}%`);
+                const bar1 = document.getElementById("bar-app1-split");
+                const bar2 = document.getElementById("bar-app2-split");
+                if (bar1 && bar2) {
+                    bar1.style.width = `${p1}%`;
+                    bar2.style.width = `${p2}%`;
+                }
+            }
+
+            // Update Redis metrics
+            if (red.connected_clients !== undefined) setElemText("redis-clients-val", red.connected_clients);
+            if (red.used_memory_human) setElemText("redis-memory-val", red.used_memory_human);
+            if (red.active_unlock_keys !== undefined) setElemText("redis-unlock-val", red.active_unlock_keys);
+            if (red.active_beam_keys !== undefined) setElemText("redis-beam-val", red.active_beam_keys);
+
+        } catch (err) {
+            console.debug("Telemetry refresh error:", err);
+        }
+    }
+
+    // Start 1s live telemetry loop
+    const telemetryTimer = setInterval(fetchTelemetry, 1000);
+
+    // Stress Test Button Handler
+    const stressBtn = document.getElementById("btn-stress-test");
+    const stressStatus = document.getElementById("stress-status-msg");
+    const stressLabel = document.getElementById("stress-btn-label");
+    const stressIcon = document.getElementById("stress-btn-icon");
+
+    if (stressBtn) {
+        stressBtn.addEventListener("click", async function() {
+            if (isStressRunning) return;
+
+            stressBtn.disabled = true;
+            stressLabel.textContent = "Launching 10s CPU Stress Test...";
+            stressIcon.textContent = "⏳";
+
+            try {
+                const resp = await fetch("/api/oslab/stress", {
+                    method: "POST",
+                    headers: {
+                        "X-CSRFToken": csrfToken,
+                        "Accept": "application/json"
+                    }
+                });
+                const res = await resp.json();
+
+                if (resp.ok && res.status === "started") {
+                    isStressRunning = true;
+                    stressStatus.style.display = "block";
+                    stressStatus.style.backgroundColor = "var(--success-subtle)";
+                    stressStatus.style.color = "var(--success)";
+                    stressStatus.style.border = "1px solid var(--success)";
+                    stressStatus.textContent = `✓ Stress thread active on ${res.replica}! Watch "CPU Throttled" counter climb above...`;
+
+                    let remaining = 10;
+                    const countdown = setInterval(() => {
+                        remaining -= 1;
+                        if (remaining > 0) {
+                            stressLabel.textContent = `Stress Test Running (${remaining}s)...`;
+                        } else {
+                            clearInterval(countdown);
+                            isStressRunning = false;
+                            stressBtn.disabled = false;
+                            stressLabel.textContent = "Run 10s CPU Stress Test";
+                            stressIcon.textContent = "⚡";
+                            stressStatus.textContent = "✓ Stress test complete! Check cgroups v2 throttled statistics.";
+                            setTimeout(() => { stressStatus.style.display = "none"; }, 5000);
+                        }
+                    }, 1000);
+
+                } else {
+                    stressBtn.disabled = false;
+                    stressLabel.textContent = "Run 10s CPU Stress Test";
+                    stressIcon.textContent = "⚡";
+                    stressStatus.style.display = "block";
+                    stressStatus.style.backgroundColor = "var(--warning-subtle)";
+                    stressStatus.style.color = "var(--warning)";
+                    stressStatus.style.border = "1px solid var(--warning)";
+                    stressStatus.textContent = res.message || "Failed to start stress test.";
+                    setTimeout(() => { stressStatus.style.display = "none"; }, 5000);
+                }
+
+            } catch (err) {
+                stressBtn.disabled = false;
+                stressLabel.textContent = "Run 10s CPU Stress Test";
+                stressIcon.textContent = "⚡";
+                stressStatus.style.display = "block";
+                stressStatus.style.backgroundColor = "var(--danger-subtle)";
+                stressStatus.style.color = "var(--danger)";
+                stressStatus.style.border = "1px solid var(--danger)";
+                stressStatus.textContent = "Network error communicating with server.";
+                setTimeout(() => { stressStatus.style.display = "none"; }, 5000);
+            }
+        });
+    }
+
+    // Copy to clipboard helper for CLI cards
+    document.querySelectorAll(".copy-cli-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const text = btn.getAttribute("data-copy");
+            if (text) {
+                navigator.clipboard.writeText(text).then(() => {
+                    const original = btn.textContent;
+                    btn.textContent = "✓ Copied!";
+                    setTimeout(() => { btn.textContent = original; }, 2000);
+                });
+            }
+        });
+    });
+});
+</script>
 {% endblock %}
