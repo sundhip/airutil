@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Account & Storage Settings - Airutil{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 900px; margin: 0 auto; padding-bottom: 3rem;">
+    <div class="page-header" style="margin-bottom: 2rem;">
+        <div>
+            <h1 class="page-title" style="font-size: 1.75rem; font-weight: 800;">Settings & Preferences</h1>
+            <p class="text-muted" style="margin-top: 0.25rem;">Manage your profile, storage quota, session security, and appearance.</p>
+        </div>
+        <div>
+            <a href="/dashboard" class="btn btn-outline btn-sm">← Back to Dashboard</a>
+        </div>
+    </div>
+
+    <!-- Storage Quota Gauge -->
+    <div class="card" style="margin-bottom: 1.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <div>
+                <h2 style="font-size: 1.15rem; font-weight: 700; margin: 0;">📦 Storage Quota (500 MB)</h2>
+                <p class="text-muted" style="font-size: 0.85rem; margin-top: 0.25rem;">
+                    Shared persistence on Docker named volume <code>airutil_data</code> mounted at <code>/vault_storage</code>.
+                </p>
+            </div>
+            <div style="text-align: right;">
+                <span style="font-size: 1.25rem; font-weight: 800; color: var(--brand-blue);" id="quota-used-display">{{ storage_used_mb or "0.0" }} MB</span>
+                <span class="text-muted" style="font-size: 0.85rem;"> / 500 MB</span>
+            </div>
+        </div>
+
+        <div style="background: var(--bg-surface-elevated); height: 12px; border-radius: var(--radius-full); overflow: hidden; margin-bottom: 0.75rem; border: 1px solid var(--border-color);">
+            <div id="quota-progress-bar" style="background: linear-gradient(90deg, var(--brand-blue), var(--brand-teal)); height: 100%; width: {{ storage_pct or 0 }}%; border-radius: var(--radius-full); transition: width 0.5s ease;"></div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-tertiary);">
+            <span>{{ storage_file_count or 0 }} files in vault</span>
+            <span>{{ storage_free_mb or "500.0" }} MB remaining</span>
+        </div>
+    </div>
+
+    <!-- Account Details -->
+    <div class="card" style="margin-bottom: 1.5rem;">
+        <h2 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 1rem;">👤 User Profile</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem;">
+            <div class="form-group">
+                <label class="form-label">Username</label>
+                <input type="text" class="form-control" value="{{ user.username }}" readonly style="background: var(--bg-surface-elevated); cursor: default;">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="text" class="form-control" value="{{ user.email }}" readonly style="background: var(--bg-surface-elevated); cursor: default;">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Role & Privileges</label>
+                <div style="display: flex; align-items: center; gap: 0.5rem; height: 38px;">
+                    {% if is_admin %}
+                    <span class="badge badge-primary">🛡️ System Administrator</span>
+                    <span class="text-muted" style="font-size: 0.75rem;">(Full Terminal Access)</span>
+                    {% else %}
+                    <span class="badge badge-info">🎓 Verified Student</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Member Since</label>
+                <input type="text" class="form-control" value="{{ user.created_at[:10] if user.created_at else 'Active' }}" readonly style="background: var(--bg-surface-elevated); cursor: default;">
+            </div>
+        </div>
+    </div>
+
+    <!-- Appearance Preferences -->
+    <div class="card" style="margin-bottom: 1.5rem;">
+        <h2 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.5rem;">🎨 Appearance Theme</h2>
+        <p class="text-muted" style="font-size: 0.85rem; margin-bottom: 1rem;">Choose your preferred interface theme. Settings persist across page loads.</p>
+
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+            <button type="button" class="btn btn-outline theme-choice-btn" data-set-theme="system" style="flex: 1; min-width: 140px; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                <span>💻</span> System Default
+            </button>
+            <button type="button" class="btn btn-outline theme-choice-btn" data-set-theme="light" style="flex: 1; min-width: 140px; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                <span>☀️</span> Light Theme
+            </button>
+            <button type="button" class="btn btn-outline theme-choice-btn" data-set-theme="dark" style="flex: 1; min-width: 140px; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                <span>🌙</span> Dark Theme
+            </button>
+        </div>
+    </div>
+
+    <!-- Active Session & OS Node Diagnostic -->
+    <div class="card">
+        <h2 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 0.5rem;">🔐 Active Session Security</h2>
+        <p class="text-muted" style="font-size: 0.85rem; margin-bottom: 1rem;">
+            Your session token is cryptographically signed and tracked with a sliding window in Redis.
+        </p>
+
+        <div style="background: var(--bg-surface-elevated); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 1rem; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.6;">
+            <div><strong>Session State:</strong> <span style="color: var(--brand-teal);">Authenticated</span></div>
+            <div><strong>Active Container Node:</strong> <code>{{ hostname }}</code></div>
+            <div><strong>Linux Kernel cgroups:</strong> <code>0.5 CPU / 128 MB RAM (Memory Ceiling Active)</code></div>
+            <div><strong>User-Agent:</strong> <span class="text-muted" style="word-break: break-all;">{{ request.user_agent }}</span></div>
+        </div>
+
+        <div style="margin-top: 1.25rem; display: flex; justify-content: flex-end;">
+            <a href="/logout" class="btn btn-outline" style="color: var(--brand-rose); border-color: rgba(244, 63, 94, 0.3);">
+                Sign Out from this Device
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.querySelectorAll('.theme-choice-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const targetTheme = btn.getAttribute('data-set-theme');
+        if (targetTheme === 'system') {
+            localStorage.removeItem('airutil_theme');
+            const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+        } else {
+            localStorage.setItem('airutil_theme', targetTheme);
+            document.documentElement.setAttribute('data-theme', targetTheme);
+        }
+        if (window.Airutil && window.Airutil.showToast) {
+            window.Airutil.showToast(`Theme updated to ${targetTheme}`, 'info');
+        }
+    });
+});
+</script>
+{% endblock %}

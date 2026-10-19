@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}Page Not Found (404) - Airutil{% endblock %}
+
+{% block content %}
+<div class="container text-center" style="max-width: 600px; margin: 4rem auto; padding: 2rem 1rem;">
+    <svg width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="var(--brand-blue)" stroke-width="1.5" style="margin-bottom: 1.5rem; opacity: 0.85;">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </svg>
+    <h1 style="font-size: 2.25rem; font-weight: 800; margin-bottom: 0.75rem; letter-spacing: -0.02em;">404 - Node Not Found</h1>
+    <p class="text-muted" style="font-size: 1.05rem; line-height: 1.6; margin-bottom: 2rem;">
+        The vault object, share link, or route you are looking for does not exist on this cluster or may have expired.
+    </p>
+    <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+        <a href="/dashboard" class="btn btn-primary">Return to Dashboard</a>
+        <a href="/files" class="btn btn-outline">Browse Vault Files</a>
+    </div>
+</div>
+{% endblock %}

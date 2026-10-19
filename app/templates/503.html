@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Service Temporarily Unavailable (503) - Airutil{% endblock %}
+
+{% block content %}
+<div class="container text-center" style="max-width: 650px; margin: 4rem auto; padding: 2rem 1rem;">
+    <svg width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="var(--brand-rose)" stroke-width="1.5" style="margin-bottom: 1.5rem; opacity: 0.9;">
+        <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+        <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+        <line x1="6" y1="6" x2="6.01" y2="6"></line>
+        <line x1="6" y1="18" x2="6.01" y2="18"></line>
+    </svg>
+    <h1 style="font-size: 2.25rem; font-weight: 800; margin-bottom: 0.75rem; letter-spacing: -0.02em;">503 - Infrastructure Overload / Failover</h1>
+    <p class="text-muted" style="font-size: 1.05rem; line-height: 1.6; margin-bottom: 1.5rem;">
+        The database or Redis cache layer is momentarily restarting or performing automatic failover. Our circuit breaker prevented connection cascading.
+    </p>
+    <div class="card" style="text-align: left; background: var(--bg-surface-elevated); margin-bottom: 2rem; font-family: var(--font-mono); font-size: 0.85rem;">
+        <div><strong>Status:</strong> <span style="color: var(--brand-amber);">Reconnecting to PostgreSQL / Redis cluster...</span></div>
+        <div><strong>Resilience:</strong> Automatic 3-try exponential backoff active.</div>
+    </div>
+    <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+        <button onclick="window.location.reload();" class="btn btn-primary">Retry Connection</button>
+        <a href="/oslab" class="btn btn-outline">Check OS Cluster Health</a>
+    </div>
+</div>
+{% endblock %}

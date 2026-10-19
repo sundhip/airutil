@@ -1,0 +1,132 @@
+/* ==============================================================================
+   Airutil Design System Tokens (Phase 7 Premium UI/UX)
+   Mobile-First | WCAG 2.2 AA Accessible | Dark Default with Light Override
+   ============================================================================== */
+
+:root {
+    /* Brand Colors & Gradients */
+    --brand-blue: #5B8CFF;
+    --brand-cyan: #22D3EE;
+    --brand-gradient: linear-gradient(135deg, #5B8CFF 0%, #22D3EE 100%);
+    --brand-gradient-hover: linear-gradient(135deg, #4F7CE6 0%, #06B6D4 100%);
+    --brand-subtle: rgba(91, 140, 255, 0.12);
+
+    --accent-purple: #8B5CF6;
+    --accent-purple-subtle: rgba(139, 92, 246, 0.12);
+
+    --success: #22C55E;
+    --success-subtle: rgba(34, 197, 94, 0.12);
+    --warning: #F59E0B;
+    --warning-subtle: rgba(245, 158, 11, 0.12);
+    --danger: #EF4444;
+    --danger-subtle: rgba(239, 68, 68, 0.12);
+    --info: #38BDF8;
+    --info-subtle: rgba(56, 189, 248, 0.12);
+
+    /* Replica Badge Colors */
+    --replica-app1-bg: rgba(91, 140, 255, 0.15);
+    --replica-app1-text: #93C5FD;
+    --replica-app1-border: #3B82F6;
+
+    --replica-app2-bg: rgba(139, 92, 246, 0.15);
+    --replica-app2-text: #C4B5FD;
+    --replica-app2-border: #8B5CF6;
+
+    /* Dark Theme Default */
+    --bg-primary: #0B1020;
+    --bg-surface: #121A33;
+    --bg-surface-elevated: #18224A;
+    --bg-surface-card: #151E3C;
+    --border-color: rgba(255, 255, 255, 0.08);
+    --border-subtle: rgba(255, 255, 255, 0.04);
+    --border-focus: #5B8CFF;
+
+    --text-primary: #EAF0FF;
+    --text-secondary: #CBD5E1;
+    --text-muted: #9AA7C7;
+
+    --glass-bg: rgba(18, 26, 51, 0.82);
+    --glass-blur: blur(12px) saturate(180%);
+
+    /* Shadows */
+    --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.2);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.28);
+    --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.38);
+    --shadow-glow: 0 0 24px rgba(91, 140, 255, 0.25);
+
+    /* Radii */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 24px;
+    --radius-full: 9999px;
+
+    /* 4px Spacing Scale */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
+    --space-10: 40px;
+    --space-12: 48px;
+
+    /* Typography */
+    --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+    /* Fluid Typography Scale */
+    --text-xs: clamp(0.7rem, 0.65rem + 0.25vw, 0.75rem);
+    --text-sm: clamp(0.8rem, 0.75rem + 0.25vw, 0.875rem);
+    --text-base: clamp(0.9rem, 0.85rem + 0.25vw, 1rem);
+    --text-lg: clamp(1.05rem, 0.98rem + 0.35vw, 1.15rem);
+    --text-xl: clamp(1.2rem, 1.1rem + 0.5vw, 1.35rem);
+    --text-2xl: clamp(1.4rem, 1.25rem + 0.75vw, 1.75rem);
+    --text-3xl: clamp(1.75rem, 1.5rem + 1.25vw, 2.25rem);
+
+    /* Motion */
+    --motion-fast: 120ms ease-out;
+    --motion-base: 200ms ease-out;
+    --motion-slow: 320ms ease-out;
+}
+
+/* Light Theme Override */
+[data-theme="light"] {
+    --bg-primary: #F6F8FC;
+    --bg-surface: #FFFFFF;
+    --bg-surface-elevated: #EDF2F9;
+    --bg-surface-card: #FFFFFF;
+    --border-color: rgba(11, 16, 32, 0.08);
+    --border-subtle: rgba(11, 16, 32, 0.04);
+    --border-focus: #2563EB;
+
+    --text-primary: #0B1020;
+    --text-secondary: #334155;
+    --text-muted: #64748B;
+
+    --glass-bg: rgba(255, 255, 255, 0.85);
+
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+    --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.12);
+    --shadow-glow: 0 0 20px rgba(91, 140, 255, 0.2);
+
+    --replica-app1-bg: #DBEAFE;
+    --replica-app1-text: #1E40AF;
+    --replica-app1-border: #60A5FA;
+
+    --replica-app2-bg: #F3E8FF;
+    --replica-app2-text: #6B21A8;
+    --replica-app2-border: #C084FC;
+}
+
+/* Respect Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+    *, ::before, ::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
