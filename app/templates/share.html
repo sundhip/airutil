@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Download Shared File - Airutil{% endblock %}
+
+{% block content %}
+<div class="share-container">
+    <div class="share-card">
+        <span style="font-size: 3rem; margin-bottom: 0.5rem; display: block;" aria-hidden="true">
+            {% if share.category == 'Images' %}🖼️
+            {% elif share.category == 'Documents' %}📄
+            {% elif share.category == 'Code' %}💻
+            {% elif share.category == 'Archives' %}📦
+            {% elif share.category == 'Videos' %}🎥
+            {% elif share.category == 'Audio' %}🎵
+            {% else %}📁{% endif %}
+        </span>
+        <h1 style="font-size: 1.35rem; font-weight: 700; word-break: break-all; margin-bottom: 0.5rem;">
+            {{ share.original_name }}
+        </h1>
+        <div style="display: flex; justify-content: center; gap: 0.75rem; margin-bottom: 1.25rem;">
+            <span class="badge badge-info">{{ share.category }}</span>
+            <span class="badge" style="background: var(--bg-surface-elevated); color: var(--text-secondary);">{{ formatted_size }}</span>
+        </div>
+
+        <!-- Expiry and Limits notice -->
+        <div class="alert alert-info" style="font-size: 0.85rem; padding: 0.75rem 1rem; margin-bottom: 1.5rem; text-align: left;">
+            <div>⏱️ <strong>Expires in:</strong> {{ hours_left }}h {{ minutes_left }}m</div>
+            {% if share.max_downloads %}
+            <div>📥 <strong>Downloads:</strong> {{ share.download_count }} / {{ share.max_downloads }} used</div>
+            {% endif %}
+        </div>
+
+        <!-- QR Code for Instant Phone Transfer -->
+        <div class="share-qr-wrapper">
+            <div>
+                <img src="/share/{{ share_token }}/qr" alt="QR Code for Mobile Download" class="share-qr-img">
+                <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.4rem;">Scan with phone camera to download</p>
+            </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+            <a href="/share/{{ share_token }}?download=1" class="btn btn-primary" style="padding: 0.75rem 1.5rem; font-size: 1rem; font-weight: 700;">
+                ⬇️ Download File ({{ formatted_size }})
+            </a>
+            <button type="button" class="btn btn-outline btn-sm" id="copy-link-btn" onclick="copyShareUrl()">
+                📋 Copy Share Link
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+function copyShareUrl() {
+    navigator.clipboard.writeText(window.location.href.split('?')[0]).then(() => {
+        const btn = document.getElementById("copy-link-btn");
+        const origText = btn.textContent;
+        btn.textContent = "✓ Link Copied!";
+        setTimeout(() => { btn.textContent = origText; }, 2000);
+    });
+}
+</script>
+{% endblock %}

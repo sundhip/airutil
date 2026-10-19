@@ -36,7 +36,8 @@
                 <ul class="nav-list">
                     {% if current_user %}
                     <li><a href="/dashboard" class="nav-link {% if request.path == '/dashboard' %}active{% endif %}">Dashboard</a></li>
-                    <li><a href="/files" class="nav-link {% if request.path == '/files' %}active{% endif %}">Files</a></li>
+                    <li><a href="/files" class="nav-link {% if request.path.startswith('/files') %}active{% endif %}">Files</a></li>
+                    <li><a href="/courses" class="nav-link {% if request.path == '/courses' %}active{% endif %}">Courses</a></li>
                     <li><a href="/vault" class="nav-link {% if request.path == '/vault' %}active{% endif %}">Vault</a></li>
                     <li><a href="/beam" class="nav-link {% if request.path == '/beam' %}active{% endif %}">Beam</a></li>
                     {% endif %}

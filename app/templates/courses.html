@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}Courses & Semesters - Airutil{% endblock %}
+
+{% block content %}
+<div class="container courses-page" style="max-width: 900px; margin: 0 auto;">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Courses & Semesters</h1>
+            <p class="text-muted">Manage your academic semesters and course codes for automatic AirDrop organization.</p>
+        </div>
+        <div class="header-actions">
+            <a href="/files" class="btn btn-outline btn-sm">← Back to Files</a>
+        </div>
+    </div>
+
+    <!-- Add Course Card -->
+    <div class="card" style="margin-bottom: 2rem;">
+        <h2 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 1rem;">Add Academic Course</h2>
+        <form action="/courses/add" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+                <div class="form-group">
+                    <label for="course_code" class="form-label">Course Code</label>
+                    <input type="text" name="course_code" id="course_code" class="form-control" placeholder="e.g. CSE1005 or BCSE302L" required>
+                    <small class="text-muted">AirDrop automatically detects this code in uploaded filenames.</small>
+                </div>
+                <div class="form-group">
+                    <label for="course_name" class="form-label">Course Title</label>
+                    <input type="text" name="course_name" id="course_name" class="form-control" placeholder="e.g. Operating Systems" required>
+                </div>
+                <div class="form-group">
+                    <label for="semester" class="form-label">Semester / Term</label>
+                    <input type="text" name="semester" id="semester" class="form-control" placeholder="e.g. Fall 2026 or Sem 5" required>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">Add Course</button>
+        </form>
+    </div>
+
+    <!-- Semesters and Courses Display -->
+    {% if not semesters %}
+    <div class="card text-center" style="padding: 2.5rem 1rem;">
+        <span style="font-size: 2.5rem; margin-bottom: 0.5rem; display: block;">🎓</span>
+        <h3>No courses configured yet</h3>
+        <p class="text-muted">Add your current semester courses above to unlock smart automatic categorization for lecture slides, assignments, and lab manuals.</p>
+    </div>
+    {% else %}
+    {% for sem, course_list in semesters.items() %}
+    <div class="card" style="margin-bottom: 1.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; margin-bottom: 1rem;">
+            <h3 style="font-size: 1.1rem; font-weight: 700; margin: 0;">📅 {{ sem }}</h3>
+            <span class="badge badge-info">{{ course_list|length }} course(s)</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+            {% for c in course_list %}
+            <div style="display: flex; justify-content: space-between; align-items: center; background: var(--bg-surface-elevated); padding: 0.75rem 1rem; border-radius: var(--radius-sm); flex-wrap: wrap; gap: 0.5rem;">
+                <div>
+                    <a href="/files?course={{ c.course_code }}" style="font-weight: 700; color: var(--brand-blue); text-decoration: none; font-size: 1rem;">{{ c.course_code }}</a>
+                    <span style="color: var(--text-secondary); margin-left: 0.5rem; font-size: 0.9rem;">{{ c.course_name }}</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <a href="/files?course={{ c.course_code }}" class="badge badge-course" style="text-decoration: none;">{{ c.file_count }} file(s)</a>
+                    <form action="/courses/{{ c.id }}/delete" method="POST" style="display: inline;" onsubmit="return confirm('Remove course {{ c.course_code }}? Uploaded files will not be deleted.');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-outline-danger btn-sm" style="padding: 0.2rem 0.5rem;">Remove</button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+</div>
+{% endblock %}

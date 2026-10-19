@@ -32,6 +32,7 @@ from flask import (
 )
 
 from app.auth import auth_bp
+from app.files import files_bp
 from app.db import get_db_cursor, init_db
 from app.session import (
     SESSION_COOKIE_NAME,
@@ -48,6 +49,7 @@ app.secret_key = os.getenv("SECRET_KEY", "airutil_super_secret_session_key_produ
 
 # Register Blueprints
 app.register_blueprint(auth_bp)
+app.register_blueprint(files_bp)
 
 # OS Concept: Environment Variables
 REPLICA_NAME: str = os.getenv("REPLICA_NAME", "standalone-app")
@@ -268,11 +270,119 @@ def oslab():
     return render_template("oslab.html", diag=diagnostics)
 
 
-@app.route("/files", methods=["GET"])
-@login_required
-def files():
-    """Smart AirDrop & Semester Organizer placeholder for Phase 3."""
-    return render_template("placeholder.html", module_name="Smart AirDrop & Semester Organizer", phase_num=3)
+@app.route("/share/<share_token>", methods=["GET"])
+def share_download_public(share_token: str):
+    """Public expiring share link handler.
+
+    OS Concept: Expiring capabilities stored in fast in-memory key-value cache (Redis TTL)
+    backed by relational PostgreSQL persistence.
+    """
+    import json
+    from flask import send_file
+    from app.files import format_bytes
+
+    r = get_redis_client()
+    redis_key = f"share:{share_token}"
+    cached_info = None
+
+    try:
+        raw_val = r.get(redis_key)
+        if raw_val:
+            cached_info = json.loads(raw_val)
+    except Exception as e:
+        logger.warning("Redis share link cache lookup error: %s", e)
+
+    # Query database to get latest state and file details
+    share_row = None
+    try:
+        with get_db_cursor(commit=False) as cur:
+            cur.execute(
+                """
+                SELECT s.id, s.file_id, s.user_id, s.expires_at, s.max_downloads, s.download_count,
+                       f.original_name, f.storage_name, f.file_path, f.file_size, f.mime_type, f.category
+                FROM share_links s
+                JOIN files f ON s.file_id = f.id
+                WHERE s.share_token = %s AND f.is_deleted = FALSE
+                """,
+                (share_token,)
+            )
+            share_row = cur.fetchone()
+    except Exception as e:
+        logger.error("DB share link lookup error: %s", e)
+        abort(500)
+
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    if not share_row:
+        return render_template("share_status.html", status="not_found", message="This share link does not exist or has been deleted."), 404
+
+    if share_row["expires_at"] < now_utc:
+        try:
+            r.delete(redis_key)
+        except Exception:
+            pass
+        return render_template("share_status.html", status="expired", message="This share link has expired."), 410
+
+    if share_row["max_downloads"] is not None and share_row["download_count"] >= share_row["max_downloads"]:
+        try:
+            r.delete(redis_key)
+        except Exception:
+            pass
+        return render_template("share_status.html", status="exhausted", message="This share link has reached its maximum download limit."), 410
+
+    # If ?download=1, initiate file download and increment count
+    if request.args.get("download", "0") == "1":
+        file_path = share_row["file_path"]
+        if not os.path.exists(file_path):
+            abort(404, description="Target file not found on disk")
+
+        try:
+            with get_db_cursor(commit=True) as cur:
+                cur.execute(
+                    "UPDATE share_links SET download_count = download_count + 1 WHERE id = %s",
+                    (share_row["id"],)
+                )
+                cur.execute(
+                    "INSERT INTO activity_log (user_id, action, details, ip_address) VALUES (%s, %s, %s, %s)",
+                    (share_row["user_id"], "share_download", f"Downloaded '{share_row['original_name']}' via share link", request.remote_addr)
+                )
+        except Exception as e:
+            logger.error("Failed to update download count: %s", e)
+
+        # Update redis cache download count
+        if cached_info:
+            cached_info["download_count"] = cached_info.get("download_count", 0) + 1
+            if share_row["max_downloads"] and cached_info["download_count"] >= share_row["max_downloads"]:
+                try:
+                    r.delete(redis_key)
+                except Exception:
+                    pass
+            else:
+                ttl = r.ttl(redis_key)
+                if ttl > 0:
+                    r.set(redis_key, json.dumps(cached_info), ex=ttl)
+
+        resp = send_file(
+            file_path,
+            as_attachment=True,
+            download_name=share_row["original_name"] or share_row["storage_name"],
+            mimetype=share_row["mime_type"] or "application/octet-stream"
+        )
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        return resp
+
+    # Render landing page
+    time_left = share_row["expires_at"] - now_utc
+    hours_left = max(0, int(time_left.total_seconds() // 3600))
+    minutes_left = max(0, int((time_left.total_seconds() % 3600) // 60))
+
+    return render_template(
+        "share.html",
+        share=share_row,
+        share_token=share_token,
+        formatted_size=format_bytes(share_row["file_size"]),
+        hours_left=hours_left,
+        minutes_left=minutes_left,
+    )
 
 
 @app.route("/vault", methods=["GET"])

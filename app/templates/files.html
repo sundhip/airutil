@@ -1,0 +1,568 @@
+{% extends "base.html" %}
+
+{% block title %}Files & Smart AirDrop - Airutil{% endblock %}
+
+{% block content %}
+<div class="container files-page">
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Files & AirDrop</h1>
+            <p class="text-muted">Smart course-aware file organizer, instant preview, and expiring share links.</p>
+        </div>
+        <div class="header-actions">
+            <a href="/courses" class="btn btn-outline btn-sm">Manage Courses</a>
+            {% if show_trash %}
+            <a href="/files" class="btn btn-primary btn-sm">← Back to Active Files</a>
+            {% else %}
+            <a href="/files?trash=1" class="btn btn-outline btn-sm">🗑️ Trash</a>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Storage Quota Widget -->
+    <div class="quota-card">
+        <div class="quota-info">
+            <div class="quota-label-row">
+                <span>Storage Quota (500 MB Limit)</span>
+                <span><strong>{{ formatted_used }}</strong> / {{ formatted_quota }} ({{ quota_percent }}%)</span>
+            </div>
+            <div class="quota-bar-track" role="progressbar" aria-valuenow="{{ quota_percent }}" aria-valuemin="0" aria-valuemax="100">
+                <div class="quota-bar-fill {% if quota_percent > 90 %}danger{% elif quota_percent > 75 %}warning{% endif %}" style="width: {{ quota_percent }}%;"></div>
+            </div>
+        </div>
+    </div>
+
+    {% if not show_trash %}
+    <!-- Multi-File Drag-and-Drop Upload Section -->
+    <section class="upload-section" aria-label="File Upload">
+        <form id="upload-form" action="/files/upload" method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            
+            <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Drop files here or click to browse">
+                <span class="dropzone-icon" aria-hidden="true">📤</span>
+                <p class="dropzone-prompt">Drag & drop files here, or <span class="highlight-val">click to browse</span></p>
+                <p class="dropzone-sub">Automatic course detection (e.g. CSE1005_Unit2.pdf) • Max 100 MB per file</p>
+                <input type="file" name="files" id="file-input" class="dropzone-input" multiple>
+            </div>
+
+            <div class="upload-options" style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap;">
+                <label for="course-select" style="font-size: 0.85rem; font-weight: 600;">Default Course for upload:</label>
+                <select name="course" id="course-select" class="form-control" style="width: auto; padding: 0.35rem 0.75rem;">
+                    <option value="">Auto-Detect from Filename</option>
+                    {% for c in courses %}
+                    <option value="{{ c.course_code }}">{{ c.course_code }} - {{ c.course_name }} ({{ c.semester }})</option>
+                    {% endfor %}
+                    <option value="General">General (Uncategorized)</option>
+                </select>
+                <button type="submit" id="upload-submit-btn" class="btn btn-primary btn-sm" style="display: none;">Upload Selected Files</button>
+            </div>
+
+            <!-- Upload Progress Bar -->
+            <div class="upload-progress-container" id="upload-progress-container">
+                <div class="upload-progress-bar" id="upload-progress-bar"></div>
+            </div>
+            <div id="upload-status" style="font-size: 0.85rem; margin-top: 0.5rem; color: var(--text-muted); display: none;"></div>
+        </form>
+    </section>
+    {% endif %}
+
+    <!-- Filter & Search Toolbar -->
+    <div class="files-toolbar">
+        <div class="chips-scroll">
+            <a href="/files?trash={{ '1' if show_trash else '0' }}{% if current_course %}&course={{ current_course }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}"
+               class="chip {% if not current_category %}active{% endif %}">All</a>
+            {% for cat in categories %}
+            <a href="/files?category={{ cat }}&trash={{ '1' if show_trash else '0' }}{% if current_course %}&course={{ current_course }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}"
+               class="chip {% if current_category == cat %}active{% endif %}">{{ cat }}</a>
+            {% endfor %}
+        </div>
+
+        <div class="toolbar-controls">
+            <!-- Course Filter -->
+            <form action="/files" method="GET" class="inline-form" id="course-filter-form">
+                <input type="hidden" name="trash" value="{{ '1' if show_trash else '0' }}">
+                {% if current_category %}<input type="hidden" name="category" value="{{ current_category }}">{% endif %}
+                {% if search_query %}<input type="hidden" name="q" value="{{ search_query }}">{% endif %}
+                <select name="course" onchange="this.form.submit()" class="form-control" style="padding: 0.35rem 0.6rem; font-size: 0.85rem;">
+                    <option value="">All Courses</option>
+                    {% for c in courses %}
+                    <option value="{{ c.course_code }}" {% if current_course == c.course_code %}selected{% endif %}>{{ c.course_code }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+
+            <!-- Full-Text Search Input -->
+            <form action="/files" method="GET" class="search-form">
+                <input type="hidden" name="trash" value="{{ '1' if show_trash else '0' }}">
+                {% if current_category %}<input type="hidden" name="category" value="{{ current_category }}">{% endif %}
+                {% if current_course %}<input type="hidden" name="course" value="{{ current_course }}">{% endif %}
+                <div class="search-input-group">
+                    <span aria-hidden="true">🔍</span>
+                    <input type="text" name="q" value="{{ search_query }}" placeholder="Search files & contents..." aria-label="Search files">
+                    {% if search_query %}
+                    <a href="/files?trash={{ '1' if show_trash else '0' }}" style="font-size: 0.8rem; text-decoration: none; color: var(--text-muted);">✕</a>
+                    {% endif %}
+                </div>
+            </form>
+
+            <!-- Grid/List View Mode Toggle -->
+            <div class="view-toggle" style="display: flex; gap: 0.25rem;">
+                <a href="/files?view=grid&trash={{ '1' if show_trash else '0' }}{% if current_category %}&category={{ current_category }}{% endif %}{% if current_course %}&course={{ current_course }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}"
+                   class="btn btn-outline btn-sm {% if view_mode != 'list' %}active{% endif %}" title="Grid View">⊞</a>
+                <a href="/files?view=list&trash={{ '1' if show_trash else '0' }}{% if current_category %}&category={{ current_category }}{% endif %}{% if current_course %}&course={{ current_course }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}"
+                   class="btn btn-outline btn-sm {% if view_mode == 'list' %}active{% endif %}" title="List View">☰</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Files / Trash Header -->
+    {% if show_trash %}
+    <div class="alert alert-warning" style="margin-bottom: 1.5rem;">
+        <span>🗑️ <strong>Trash Bin</strong>: Files in trash are retained for 7 days before permanent cleanup. You can restore them anytime.</span>
+    </div>
+    {% endif %}
+
+    <!-- Files Container -->
+    {% if not files %}
+    <div class="card text-center" style="padding: 3rem 1rem;">
+        <span style="font-size: 3rem; margin-bottom: 1rem; display: block;">📂</span>
+        <h3>No files found</h3>
+        <p class="text-muted">
+            {% if search_query %}
+            No files matched your search for "{{ search_query }}".
+            {% elif current_category or current_course %}
+            No files matched the selected filters.
+            {% elif show_trash %}
+            Trash is currently empty.
+            {% else %}
+            Upload your lecture notes, assignments, code, or images to get started.
+            {% endif %}
+        </p>
+    </div>
+    {% elif view_mode == 'list' %}
+    <!-- List View Table -->
+    <div class="files-table-container">
+        <table class="files-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Course</th>
+                    <th>Category</th>
+                    <th>Size</th>
+                    <th>Date</th>
+                    <th style="text-align: right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for f in files %}
+                <tr>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 0.6rem;">
+                            <span>
+                                {% if f.category == 'Images' %}🖼️
+                                {% elif f.category == 'Documents' %}📄
+                                {% elif f.category == 'Code' %}💻
+                                {% elif f.category == 'Archives' %}📦
+                                {% elif f.category == 'Videos' %}🎥
+                                {% elif f.category == 'Audio' %}🎵
+                                {% else %}📁{% endif %}
+                            </span>
+                            <span style="font-weight: 600; word-break: break-all;">{{ f.original_name }}</span>
+                        </div>
+                    </td>
+                    <td><span class="badge badge-course">{{ f.course }}</span></td>
+                    <td><span class="badge badge-category">{{ f.category }}</span></td>
+                    <td>{{ f.formatted_size }}</td>
+                    <td class="text-muted" style="font-size: 0.75rem;">{{ f.created_at.strftime('%b %d, %Y') if f.created_at else '' }}</td>
+                    <td style="text-align: right;">
+                        <div style="display: inline-flex; gap: 0.3rem;">
+                            {% if not show_trash %}
+                            <a href="/files/{{ f.id }}/download" class="btn btn-outline btn-sm" title="Download">⬇️</a>
+                            <button type="button" class="btn btn-outline btn-sm btn-preview" data-id="{{ f.id }}" data-name="{{ f.original_name }}" data-category="{{ f.category }}" title="Preview">👁️</button>
+                            <button type="button" class="btn btn-outline btn-sm btn-share" data-id="{{ f.id }}" data-name="{{ f.original_name }}" title="Share Link & QR">🔗</button>
+                            <button type="button" class="btn btn-outline btn-sm btn-move" data-id="{{ f.id }}" data-course="{{ f.course }}" title="Move Course">📁</button>
+                            <form action="/files/{{ f.id }}/delete" method="POST" style="display: inline;" onsubmit="return confirm('Move file to trash?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-outline-danger btn-sm" title="Delete">🗑️</button>
+                            </form>
+                            {% else %}
+                            <form action="/files/{{ f.id }}/restore" method="POST" style="display: inline;">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-outline btn-sm" title="Restore">♻️ Restore</button>
+                            </form>
+                            <form action="/files/{{ f.id }}/delete" method="POST" style="display: inline;" onsubmit="return confirm('Permanently delete this file from storage?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="permanent" value="1">
+                                <button type="submit" class="btn btn-outline-danger btn-sm" title="Delete Permanently">❌ Delete</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <!-- Grid View Cards -->
+    <div class="files-grid">
+        {% for f in files %}
+        <div class="file-card">
+            <div class="file-preview-banner">
+                {% if f.has_thumb %}
+                <img src="/files/{{ f.id }}/thumbnail" alt="{{ f.original_name }}" class="file-preview-img" loading="lazy">
+                {% else %}
+                <span class="file-preview-icon">
+                    {% if f.category == 'Images' %}🖼️
+                    {% elif f.category == 'Documents' %}📄
+                    {% elif f.category == 'Code' %}💻
+                    {% elif f.category == 'Archives' %}📦
+                    {% elif f.category == 'Videos' %}🎥
+                    {% elif f.category == 'Audio' %}🎵
+                    {% else %}📁{% endif %}
+                </span>
+                {% endif %}
+            </div>
+            <div class="file-card-body">
+                <div class="file-card-title" title="{{ f.original_name }}">{{ f.original_name }}</div>
+                <div class="file-card-meta">
+                    <span class="badge badge-course">{{ f.course }}</span>
+                    <span>{{ f.formatted_size }}</span>
+                    <span>• {{ f.category }}</span>
+                </div>
+
+                {% if f.tags %}
+                <div class="file-tags">
+                    {% for tag in f.tags %}
+                    <a href="/files?tag={{ tag }}" class="badge-tag">#{{ tag }}</a>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <div class="file-card-actions">
+                    {% if not show_trash %}
+                    <a href="/files/{{ f.id }}/download" class="btn btn-outline btn-sm" title="Download">⬇️</a>
+                    <button type="button" class="btn btn-outline btn-sm btn-preview" data-id="{{ f.id }}" data-name="{{ f.original_name }}" data-category="{{ f.category }}" title="Preview">👁️</button>
+                    <button type="button" class="btn btn-outline btn-sm btn-share" data-id="{{ f.id }}" data-name="{{ f.original_name }}" title="Share & QR">🔗</button>
+                    <button type="button" class="btn btn-outline btn-sm btn-move" data-id="{{ f.id }}" data-course="{{ f.course }}" title="Move Course">📁</button>
+                    <button type="button" class="btn btn-outline btn-sm btn-rename" data-id="{{ f.id }}" data-name="{{ f.original_name }}" title="Rename">✏️</button>
+                    <form action="/files/{{ f.id }}/delete" method="POST" style="margin-left: auto;" onsubmit="return confirm('Move file to trash?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-outline-danger btn-sm" title="Delete">🗑️</button>
+                    </form>
+                    {% else %}
+                    <form action="/files/{{ f.id }}/restore" method="POST" style="display: inline;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-outline btn-sm">♻️ Restore</button>
+                    </form>
+                    <form action="/files/{{ f.id }}/delete" method="POST" style="margin-left: auto;" onsubmit="return confirm('Permanently delete this file?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="permanent" value="1">
+                        <button type="submit" class="btn btn-outline-danger btn-sm">❌ Delete</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- ==============================================================================
+     Modals for Phase 3: Preview, Share, Move, Rename
+     ============================================================================== -->
+
+<!-- Preview Modal -->
+<div class="modal-backdrop" id="preview-modal">
+    <div class="modal-content" style="max-width: 750px;">
+        <div class="modal-header">
+            <h3 id="preview-modal-title" style="font-size: 1.1rem; margin: 0; word-break: break-all;">File Preview</h3>
+            <button type="button" class="btn-icon close-modal" aria-label="Close modal">✕</button>
+        </div>
+        <div class="modal-body">
+            <div id="preview-body-content">
+                <p class="text-muted">Loading preview...</p>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <a id="preview-download-link" href="#" class="btn btn-primary btn-sm">Download File</a>
+            <button type="button" class="btn btn-outline btn-sm close-modal">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Share Modal -->
+<div class="modal-backdrop" id="share-modal">
+    <div class="modal-content" style="max-width: 480px;">
+        <div class="modal-header">
+            <h3 style="font-size: 1.1rem; margin: 0;">Create Expiring Share Link</h3>
+            <button type="button" class="btn-icon close-modal" aria-label="Close modal">✕</button>
+        </div>
+        <form id="share-form" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="modal-body">
+                <p id="share-file-name" style="font-weight: 600; margin-bottom: 1rem; word-break: break-all;"></p>
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label for="share-duration" class="form-label">Link Expiry Duration</label>
+                    <select name="duration" id="share-duration" class="form-control">
+                        <option value="1h">1 Hour (Quick beam)</option>
+                        <option value="1d" selected>1 Day (24 hours)</option>
+                        <option value="7d">7 Days (Study group)</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label for="share-max-dl" class="form-label">Max Downloads (Optional)</label>
+                    <input type="number" name="max_downloads" id="share-max-dl" class="form-control" placeholder="Unlimited" min="1" max="1000">
+                    <small class="text-muted">Link auto-invalidates once download limit is reached.</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline btn-sm close-modal">Cancel</button>
+                <button type="submit" class="btn btn-primary btn-sm">Generate Link & QR</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Move Course Modal -->
+<div class="modal-backdrop" id="move-modal">
+    <div class="modal-content" style="max-width: 420px;">
+        <div class="modal-header">
+            <h3 style="font-size: 1.1rem; margin: 0;">Move to Course</h3>
+            <button type="button" class="btn-icon close-modal" aria-label="Close modal">✕</button>
+        </div>
+        <form id="move-form" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="move-course-select" class="form-label">Destination Course</label>
+                    <select name="course" id="move-course-select" class="form-control">
+                        {% for c in courses %}
+                        <option value="{{ c.course_code }}">{{ c.course_code }} - {{ c.course_name }}</option>
+                        {% endfor %}
+                        <option value="General">General</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline btn-sm close-modal">Cancel</button>
+                <button type="submit" class="btn btn-primary btn-sm">Move File</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Rename Modal -->
+<div class="modal-backdrop" id="rename-modal">
+    <div class="modal-content" style="max-width: 420px;">
+        <div class="modal-header">
+            <h3 style="font-size: 1.1rem; margin: 0;">Rename File</h3>
+            <button type="button" class="btn-icon close-modal" aria-label="Close modal">✕</button>
+        </div>
+        <form id="rename-form" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="rename-input" class="form-label">New Filename</label>
+                    <input type="text" name="name" id="rename-input" class="form-control" required>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline btn-sm close-modal">Cancel</button>
+                <button type="submit" class="btn btn-primary btn-sm">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- JavaScript for Phase 3 Client Interactions -->
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const dropzone = document.getElementById("dropzone");
+    const fileInput = document.getElementById("file-input");
+    const uploadForm = document.getElementById("upload-form");
+    const progressContainer = document.getElementById("upload-progress-container");
+    const progressBar = document.getElementById("upload-progress-bar");
+    const uploadStatus = document.getElementById("upload-status");
+
+    // Modal elements
+    const previewModal = document.getElementById("preview-modal");
+    const shareModal = document.getElementById("share-modal");
+    const moveModal = document.getElementById("move-modal");
+    const renameModal = document.getElementById("rename-modal");
+
+    // Drag and drop events
+    if (dropzone && fileInput) {
+        ["dragenter", "dragover"].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzone.classList.add("dragover");
+            }, false);
+        });
+
+        ["dragleave", "drop"].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzone.classList.remove("dragover");
+            }, false);
+        });
+
+        dropzone.addEventListener("drop", (e) => {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                handleUpload(files);
+            }
+        });
+
+        fileInput.addEventListener("change", () => {
+            if (fileInput.files.length > 0) {
+                handleUpload(fileInput.files);
+            }
+        });
+    }
+
+    function handleUpload(files) {
+        if (!files.length) return;
+        const formData = new FormData();
+        const csrfToken = document.querySelector('input[name="csrf_token"]').value;
+        const courseSelect = document.getElementById("course-select");
+        const selectedCourse = courseSelect ? courseSelect.value : "";
+
+        formData.append("csrf_token", csrfToken);
+        formData.append("course", selectedCourse);
+        for (let i = 0; i < files.length; i++) {
+            formData.append("files", files[i]);
+        }
+
+        progressContainer.style.display = "block";
+        uploadStatus.style.display = "block";
+        uploadStatus.textContent = `Uploading ${files.length} file(s)...`;
+
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/files/upload", true);
+        xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
+
+        xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+                const percent = Math.round((e.loaded / e.total) * 100);
+                progressBar.style.width = percent + "%";
+                uploadStatus.textContent = `Uploading... ${percent}%`;
+            }
+        };
+
+        xhr.onload = () => {
+            if (xhr.status === 200) {
+                uploadStatus.textContent = "Upload complete! Refreshing...";
+                setTimeout(() => { window.location.reload(); }, 600);
+            } else {
+                let errorMsg = "Upload failed.";
+                try {
+                    const res = JSON.parse(xhr.responseText);
+                    if (res.error) errorMsg = res.error;
+                } catch(e) {}
+                uploadStatus.textContent = "Error: " + errorMsg;
+                progressBar.style.backgroundColor = "var(--danger)";
+            }
+        };
+
+        xhr.onerror = () => {
+            uploadStatus.textContent = "Network error during upload.";
+            progressBar.style.backgroundColor = "var(--danger)";
+        };
+
+        xhr.send(formData);
+    }
+
+    // Modal Close buttons
+    document.querySelectorAll(".close-modal").forEach(btn => {
+        btn.addEventListener("click", () => {
+            document.querySelectorAll(".modal-backdrop").forEach(m => m.classList.remove("open"));
+        });
+    });
+
+    // Close modal on backdrop click
+    document.querySelectorAll(".modal-backdrop").forEach(backdrop => {
+        backdrop.addEventListener("click", (e) => {
+            if (e.target === backdrop) backdrop.classList.remove("open");
+        });
+    });
+
+    // Preview File Action
+    document.querySelectorAll(".btn-preview").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const fileId = btn.getAttribute("data-id");
+            const fileName = btn.getAttribute("data-name");
+            const category = btn.getAttribute("data-category");
+
+            document.getElementById("preview-modal-title").textContent = fileName;
+            document.getElementById("preview-download-link").href = `/files/${fileId}/download`;
+            const contentDiv = document.getElementById("preview-body-content");
+            contentDiv.innerHTML = '<p class="text-muted">Loading preview...</p>';
+            previewModal.classList.add("open");
+
+            if (category === "Images") {
+                contentDiv.innerHTML = `<img src="/files/${fileId}/download?inline=1" alt="${fileName}" style="max-width: 100%; max-height: 400px; display: block; margin: 0 auto; border-radius: 8px;">`;
+            } else {
+                fetch(`/files/${fileId}/preview`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.content) {
+                            contentDiv.innerHTML = `<pre style="background: var(--bg-surface-elevated); padding: 1rem; border-radius: 8px; max-height: 400px; overflow-y: auto; font-family: var(--font-mono); font-size: 0.85rem; white-space: pre-wrap;">${escapeHtml(data.content)}</pre>`;
+                        } else {
+                            contentDiv.innerHTML = '<p class="text-muted">No text preview available for this file type.</p>';
+                        }
+                    })
+                    .catch(err => {
+                        contentDiv.innerHTML = '<p class="text-danger">Failed to load preview.</p>';
+                    });
+            }
+        });
+    });
+
+    // Share File Action
+    document.querySelectorAll(".btn-share").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const fileId = btn.getAttribute("data-id");
+            const fileName = btn.getAttribute("data-name");
+            document.getElementById("share-file-name").textContent = "File: " + fileName;
+            document.getElementById("share-form").action = `/files/${fileId}/share`;
+            shareModal.classList.add("open");
+        });
+    });
+
+    // Move File Action
+    document.querySelectorAll(".btn-move").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const fileId = btn.getAttribute("data-id");
+            const currentCourse = btn.getAttribute("data-course");
+            const moveSelect = document.getElementById("move-course-select");
+            if (moveSelect) moveSelect.value = currentCourse;
+            document.getElementById("move-form").action = `/files/${fileId}/move`;
+            moveModal.classList.add("open");
+        });
+    });
+
+    // Rename File Action
+    document.querySelectorAll(".btn-rename").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const fileId = btn.getAttribute("data-id");
+            const fileName = btn.getAttribute("data-name");
+            document.getElementById("rename-input").value = fileName;
+            document.getElementById("rename-form").action = `/files/${fileId}/rename`;
+            renameModal.classList.add("open");
+        });
+    });
+
+    function escapeHtml(text) {
+        const div = document.createElement("div");
+        div.textContent = text;
+        return div.innerHTML;
+    }
+});
+</script>
+{% endblock %}
