@@ -84,12 +84,17 @@ def test_csrf_protection_enforcement(client):
 
 def test_login_rate_limiting(client):
     """Verify that 6 failed login attempts trigger Redis rate limiting (429)."""
+    # Clear any previous rate limit keys from prior tests
+    r = get_redis_client()
+    for key in r.keys("ratelimit:*"):
+        r.delete(key)
+
     # Prime anonymous CSRF token
     client.get("/login")
     anon_csrf = client.get_cookie("airutil_anon_csrf")
     csrf_val = anon_csrf.value if anon_csrf else ""
 
-    test_ip_user = f"rate_target_{secrets.token_hex(3)}"
+    test_ip_user = f"rate_target_{secrets.token_hex(4)}"
 
     # Attempt 5 failed logins
     for i in range(5):
