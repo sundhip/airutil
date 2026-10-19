@@ -31,11 +31,27 @@ _redis_client: Optional[redis.Redis] = None
 
 
 def get_redis_client() -> redis.Redis:
-    """Retrieve or initialize the Redis client instance."""
+    """Retrieve or initialize the Redis client instance with resilient timeout settings."""
     global _redis_client
     if _redis_client is None:
-        _redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+        _redis_client = redis.from_url(
+            REDIS_URL,
+            decode_responses=True,
+            socket_connect_timeout=2.0,
+            socket_timeout=2.0,
+            retry_on_timeout=True,
+        )
     return _redis_client
+
+
+def check_redis_health() -> bool:
+    """Non-throwing health probe for Redis used in healthchecks and 503 error handling."""
+    try:
+        r = get_redis_client()
+        return bool(r.ping())
+    except Exception as e:
+        logger.debug("Redis health check failed: %s", e)
+        return False
 
 
 class SessionManager:

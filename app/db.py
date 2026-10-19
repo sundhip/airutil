@@ -5,7 +5,9 @@ Operating Systems Concepts Demonstrated:
    frequent socket three-way handshakes and worker process fork overhead in PostgreSQL.
 2. ACID Transactions & Concurrency: Isolation of concurrent database modifications
    across multiple container replicas.
-3. Prepared / Parameterized Queries: Prevents SQL injection and allows PostgreSQL
+3. Resilience & Self-Healing Sockets: Reconnection with exponential backoff handles
+   temporary container restarts and network partitions.
+4. Prepared / Parameterized Queries: Prevents SQL injection and allows PostgreSQL
    to cache query execution plans.
 """
 
@@ -33,10 +35,11 @@ _pool: Optional[pool.ThreadedConnectionPool] = None
 
 
 def get_pool() -> pool.ThreadedConnectionPool:
-    """Retrieve or initialize the global threaded connection pool."""
+    """Retrieve or initialize the global threaded connection pool with retry resilience."""
     global _pool
     if _pool is None or _pool.closed:
-        max_retries = 10
+        max_retries = 5
+        backoff = 1.0
         for attempt in range(1, max_retries + 1):
             try:
                 _pool = pool.ThreadedConnectionPool(
@@ -48,24 +51,54 @@ def get_pool() -> pool.ThreadedConnectionPool:
                 break
             except Exception as e:
                 logger.warning(
-                    "Database connection attempt %d/%d failed: %s. Retrying in 2s...",
-                    attempt, max_retries, e
+                    "Database connection attempt %d/%d failed: %s. Retrying in %.1fs...",
+                    attempt, max_retries, e, backoff
                 )
-                time.sleep(2)
+                time.sleep(backoff)
+                backoff = min(backoff * 1.5, 5.0)
+
         if _pool is None:
             raise RuntimeError("Could not connect to PostgreSQL database pool.")
     return _pool
+
+
+def check_db_health() -> bool:
+    """Non-throwing health probe used by readiness checks and 503 error handling."""
+    try:
+        connection_pool = get_pool()
+        conn = connection_pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1;")
+                return True
+        finally:
+            connection_pool.putconn(conn)
+    except Exception as e:
+        logger.debug("Database health check failed: %s", e)
+        return False
 
 
 @contextmanager
 def get_db_cursor(commit: bool = True) -> Generator[psycopg2.extensions.cursor, None, None]:
     """Context manager for acquiring a pooled connection and cursor with transaction management.
 
-    Args:
-        commit: If True, commits the transaction on clean exit; rolls back on exception.
+    Handles broken socket reconnection transparently.
     """
+    global _pool
     connection_pool = get_pool()
-    conn = connection_pool.getconn()
+    try:
+        conn = connection_pool.getconn()
+    except Exception as e:
+        logger.warning("Connection checkout failed: %s. Re-initializing pool...", e)
+        if _pool and not _pool.closed:
+            try:
+                _pool.closeall()
+            except Exception:
+                pass
+        _pool = None
+        connection_pool = get_pool()
+        conn = connection_pool.getconn()
+
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             yield cur
@@ -75,7 +108,38 @@ def get_db_cursor(commit: bool = True) -> Generator[psycopg2.extensions.cursor, 
         conn.rollback()
         raise
     finally:
-        connection_pool.putconn(conn)
+        try:
+            connection_pool.putconn(conn)
+        except Exception:
+            pass
+
+
+def is_user_admin(user_id: int) -> bool:
+    """Determine if a user has admin privileges.
+
+    OS Principle: Principle of Least Privilege.
+    By default, the first registered student (lowest user_id) is the administrator.
+    """
+    if not user_id:
+        return False
+    try:
+        with get_db_cursor(commit=False) as cur:
+            cur.execute("SELECT id, is_admin FROM users WHERE id = %s", (user_id,))
+            row = cur.fetchone()
+            if not row:
+                return False
+            if row.get("is_admin") is True:
+                return True
+            # Check if this user is the lowest ID
+            cur.execute("SELECT MIN(id) AS first_id FROM users")
+            min_row = cur.fetchone()
+            if min_row and min_row.get("first_id") == user_id:
+                return True
+    except Exception as e:
+        logger.warning("Failed to evaluate admin status for user %s: %s", user_id, e)
+        # Fallback: ID 1 is always admin
+        return user_id == 1
+    return False
 
 
 def init_db() -> None:
@@ -90,7 +154,14 @@ def init_db() -> None:
 
     with get_db_cursor(commit=True) as cur:
         cur.execute(schema_sql)
-    logger.info("Database schema initialized successfully.")
+        # Migration: ensure is_admin column exists
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE;")
+        # Set first registered user to admin if not already set
+        cur.execute("""
+            UPDATE users SET is_admin = TRUE 
+            WHERE id = (SELECT MIN(id) FROM users) AND (is_admin IS NULL OR is_admin = FALSE);
+        """)
+    logger.info("Database schema initialized and admin migration applied successfully.")
 
 
 def log_activity(user_id: Optional[int], action: str, details: str, ip_address: str) -> None:

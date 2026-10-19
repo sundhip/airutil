@@ -140,3 +140,39 @@ class LoginRateLimiter:
 def generate_csrf_token() -> str:
     """Generate a high-entropy CSRF token using OS kernel random device."""
     return secrets.token_hex(32)
+
+
+INSECURE_DEFAULT_SECRETS = {
+    "airutil_super_secret_session_key_production_grade_32bytes",
+    "airutil_secure_vault_2026",
+    "replace_with_strong_password",
+    "replace_with_generated_64char_hex_key",
+    "default",
+    "secret",
+    "changeme",
+}
+
+
+def validate_production_secrets(strict: bool = False) -> Tuple[bool, list[str]]:
+    """Verify that deployment secrets are not using default insecure values.
+
+    Args:
+        strict: If True, raises RuntimeError when an insecure default secret is detected.
+    Returns:
+        (is_secure, list_of_warnings)
+    """
+    import os
+    warnings: list[str] = []
+    secret_key = os.getenv("SECRET_KEY", "")
+    db_pass = os.getenv("POSTGRES_PASSWORD", "")
+
+    if not secret_key or secret_key in INSECURE_DEFAULT_SECRETS:
+        warnings.append("SECRET_KEY is unset or using insecure default value.")
+    if not db_pass or db_pass in INSECURE_DEFAULT_SECRETS:
+        warnings.append("POSTGRES_PASSWORD is unset or using insecure default value.")
+
+    is_production = os.getenv("FLASK_ENV") == "production" or os.getenv("AIRUTIL_ENV") == "production"
+    if (strict or is_production) and warnings:
+        raise RuntimeError(f"FATAL: Insecure secrets detected in production: {', '.join(warnings)}")
+
+    return len(warnings) == 0, warnings

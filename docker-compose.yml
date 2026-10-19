@@ -6,7 +6,8 @@
 # 2. Control Groups (cgroups v2): Hard CPU quotas and memory constraints on services.
 # 3. Read-Only Root Filesystem: read_only: true with volatile tmpfs (/tmp) for attack mitigation.
 # 4. Linux Capabilities: cap_drop: ALL + no-new-privileges: true prevents setuid escalation.
-# 5. Software-Defined Bridge Networking: vault_net isolates internal service sockets.
+# 5. Software-Defined Bridge Networking: vault_net isolates internal service sockets;
+#    showcase_net connects app replicas strictly to read-only docker socket proxy.
 # ==============================================================================
 
 services:
@@ -29,6 +30,11 @@ services:
         condition: service_healthy
     networks:
       - vault_net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/nginx-healthz"]
       interval: 10s
@@ -51,11 +57,20 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - STORAGE_PATH=/vault_storage
       - SECRET_KEY=${SECRET_KEY:-airutil_super_secret_session_key_production_grade_32bytes}
+      - DOCKER_HOST=tcp://dockerproxy:2375
+      - SHOWCASE_ENABLED=${SHOWCASE_ENABLED:-true}
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:-airutil_internal_telemetry_token_64bytes_production}
     deploy:
       resources:
         limits:
           cpus: '0.50'
           memory: 128M
+          pids: 100
+    pids_limit: 100
+    ulimits:
+      nofile:
+        soft: 1024
+        hard: 2048
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=32m
@@ -73,6 +88,7 @@ services:
         condition: service_healthy
     networks:
       - vault_net
+      - showcase_net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:5000/healthz"]
       interval: 10s
@@ -95,11 +111,20 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - STORAGE_PATH=/vault_storage
       - SECRET_KEY=${SECRET_KEY:-airutil_super_secret_session_key_production_grade_32bytes}
+      - DOCKER_HOST=tcp://dockerproxy:2375
+      - SHOWCASE_ENABLED=${SHOWCASE_ENABLED:-true}
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:-airutil_internal_telemetry_token_64bytes_production}
     deploy:
       resources:
         limits:
           cpus: '0.50'
           memory: 128M
+          pids: 100
+    pids_limit: 100
+    ulimits:
+      nofile:
+        soft: 1024
+        hard: 2048
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=32m
@@ -117,6 +142,7 @@ services:
         condition: service_healthy
     networks:
       - vault_net
+      - showcase_net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:5000/healthz"]
       interval: 10s
@@ -143,6 +169,12 @@ services:
         limits:
           cpus: '0.25'
           memory: 128M
+          pids: 100
+    pids_limit: 100
+    ulimits:
+      nofile:
+        soft: 1024
+        hard: 2048
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=32m
@@ -178,6 +210,11 @@ services:
     restart: unless-stopped
     networks:
       - vault_net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 96M
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -201,6 +238,11 @@ services:
     restart: unless-stopped
     networks:
       - vault_net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-airutil} -d ${POSTGRES_DB:-airutil}"]
       interval: 5s
@@ -208,12 +250,52 @@ services:
       retries: 5
       start_period: 5s
 
+  # ----------------------------------------------------------------------------
+  # Docker Socket Proxy (Phase 6B Security Boundary)
+  # Read-Only proxy to Docker Engine API. Only accessible inside showcase_net.
+  # App containers NEVER mount docker.sock directly.
+  # ----------------------------------------------------------------------------
+  dockerproxy:
+    container_name: airutil_dockerproxy
+    image: tecnativa/docker-socket-proxy:latest
+    environment:
+      - CONTAINERS=1
+      - NETWORKS=1
+      - VOLUMES=1
+      - IMAGES=1
+      - INFO=1
+      - POST=0
+      - EXEC=0
+      - SERVICES=0
+      - SWARM=0
+      - SYSTEM=0
+      - AUTH=0
+      - SECRETS=0
+      - NODES=0
+      - TASKS=0
+      - CONFIGS=0
+      - PLUGINS=0
+      - DISTRIBUTION=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+    networks:
+      - showcase_net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 64M
+
 # ------------------------------------------------------------------------------
-# Isolated Bridge Network
+# Isolated Bridge Networks
 # ------------------------------------------------------------------------------
 networks:
   vault_net:
     name: vault_net
+    driver: bridge
+  showcase_net:
+    name: showcase_net
     driver: bridge
 
 # ------------------------------------------------------------------------------

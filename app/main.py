@@ -32,11 +32,13 @@ from flask import (
 )
 
 from app.auth import auth_bp
-from app.files import files_bp
+from app.files import files_bp, format_bytes
 from app.vault import vault_bp
 from app.beam import beam_bp
 from app.oslab import oslab_bp
-from app.db import get_db_cursor, init_db
+from app.showcase import showcase_bp
+from app.db import get_db_cursor, init_db, is_user_admin
+from app.security import validate_production_secrets
 from app.session import (
     SESSION_COOKIE_NAME,
     SessionManager,
@@ -50,12 +52,19 @@ logger = logging.getLogger("airutil.main")
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "airutil_super_secret_session_key_production_grade_32bytes")
 
+# Validate deployment secrets
+try:
+    validate_production_secrets(strict=False)
+except Exception as e:
+    logger.error("Security warning: %s", e)
+
 # Register Blueprints
 app.register_blueprint(auth_bp)
 app.register_blueprint(files_bp)
 app.register_blueprint(vault_bp)
 app.register_blueprint(beam_bp)
 app.register_blueprint(oslab_bp)
+app.register_blueprint(showcase_bp)
 
 # OS Concept: Environment Variables
 REPLICA_NAME: str = os.getenv("REPLICA_NAME", "standalone-app")
@@ -133,10 +142,14 @@ def set_security_headers_and_anon_csrf(response: Response) -> Response:
 @app.context_processor
 def inject_template_globals() -> Dict[str, Any]:
     """Inject CSRF token, replica name, and user context into all templates."""
+    user = getattr(g, "user", None)
+    user_id = user.get("user_id") if user else None
     return {
         "csrf_token": lambda: getattr(g, "csrf_token", ""),
-        "current_user": getattr(g, "user", None),
+        "current_user": user,
         "replica_name": REPLICA_NAME,
+        "is_admin": is_user_admin(user_id) if user_id else False,
+        "showcase_enabled": os.getenv("SHOWCASE_ENABLED", "true").lower() in ("true", "1", "yes"),
     }
 
 
@@ -383,6 +396,86 @@ def share_download_public(share_token: str):
         hours_left=hours_left,
         minutes_left=minutes_left,
     )
+
+
+@app.route("/settings", methods=["GET"])
+def view_settings():
+    """User account settings, quota overview, and theme preferences."""
+    if not getattr(g, "user", None):
+        flash("Please log in to view settings.", "warning")
+        return redirect(url_for("auth.login", next=request.url))
+
+    user_id = g.user["user_id"]
+    used_bytes = 0
+    file_count = 0
+    try:
+        with get_db_cursor(commit=False) as cur:
+            cur.execute(
+                "SELECT COALESCE(SUM(file_size), 0) AS total_bytes, COUNT(id) AS count FROM files WHERE user_id = %s AND is_deleted = FALSE",
+                (user_id,)
+            )
+            row = cur.fetchone()
+            if row:
+                used_bytes = int(row["total_bytes"])
+                file_count = int(row["count"])
+    except Exception as e:
+        logger.warning("Failed to fetch user settings stats: %s", e)
+
+    quota_bytes = 500 * 1024 * 1024  # 500 MB
+    quota_percent = min(100.0, round((used_bytes / quota_bytes) * 100.0, 1))
+
+    return render_template(
+        "settings.html",
+        user=g.user,
+        used_bytes=used_bytes,
+        used_bytes_human=format_bytes(used_bytes),
+        quota_bytes=quota_bytes,
+        quota_percent=quota_percent,
+        file_count=file_count,
+        replica_name=REPLICA_NAME,
+        is_admin=is_user_admin(user_id),
+    )
+
+
+@app.route("/manifest.json", methods=["GET"])
+def manifest():
+    """PWA application manifest."""
+    return app.send_static_file("manifest.json")
+
+
+@app.route("/sw.js", methods=["GET"])
+def service_worker():
+    """PWA service worker with root scope."""
+    resp = app.send_static_file("sw.js")
+    resp.headers["Content-Type"] = "application/javascript"
+    resp.headers["Service-Worker-Allowed"] = "/"
+    return resp
+
+
+@app.route("/offline", methods=["GET"])
+def view_offline():
+    """PWA offline shell page."""
+    return render_template("offline.html")
+
+
+@app.errorhandler(404)
+def page_not_found(e):
+    """Graceful 404 handler with startup-grade illustrated empty state."""
+    if request.path.startswith("/api/") or request.is_json:
+        return jsonify({"status": "error", "error": getattr(e, "description", "Not Found")}), 404
+    return render_template("404.html", error_message=getattr(e, "description", str(e))), 404
+
+
+@app.errorhandler(503)
+def service_unavailable(e):
+    """Graceful 503 handler when backend dependencies are temporarily down."""
+    return render_template("503.html", error_message=getattr(e, "description", str(e))), 503
+
+
+@app.errorhandler(500)
+def internal_server_error(e):
+    """Graceful fallback for uncaught 500 exceptions."""
+    return render_template("503.html", error_message="A backend service is temporarily unavailable. Please retry."), 503
 
 
 

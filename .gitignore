@@ -45,3 +45,4 @@ tmp/
 .coverage
 htmlcov/
 .pytest_cache/
+backups/
